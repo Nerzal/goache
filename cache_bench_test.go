@@ -99,6 +99,38 @@ func BenchmarkParallelGetSet(b *testing.B) {
 	})
 }
 
+// BenchmarkFreshLoad* measure bulk-loading a brand new cache from empty —
+// the "ingestion" scenario (final size known upfront) that WithCapacity
+// targets. Compare the two to see the effect of pre-sizing shard maps.
+
+func BenchmarkFreshLoad_NoHint(b *testing.B) {
+	const n = 10000
+	entries := make([]Entry[string, int], n)
+	for i := range entries {
+		entries[i] = Entry[string, int]{Key: strconv.Itoa(i), Value: i}
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		c := New[string, int]()
+		c.SetMany(entries)
+	}
+}
+
+func BenchmarkFreshLoad_WithCapacityHint(b *testing.B) {
+	const n = 10000
+	entries := make([]Entry[string, int], n)
+	for i := range entries {
+		entries[i] = Entry[string, int]{Key: strconv.Itoa(i), Value: i}
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		c := New[string, int](WithCapacity(n))
+		c.SetMany(entries)
+	}
+}
+
 func BenchmarkParallelGet(b *testing.B) {
 	c := New[string, int]()
 	const n = 100000

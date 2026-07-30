@@ -124,3 +124,79 @@ func TestWithShardCountRoundsUpToPowerOfTwo(t *testing.T) {
 		t.Fatalf("shard count = %d; want 16", got)
 	}
 }
+
+// TestGrowth forces a single shard through many doublings of its
+// open-addressed table and verifies every key survives every resize with
+// the right value, and that overwrites during growth don't duplicate slots.
+func TestGrowth(t *testing.T) {
+	c := New[int, int](WithShardCount(1))
+
+	const n = 20000
+	for i := range n {
+		c.Set(i, i)
+	}
+	if got := c.Len(); got != n {
+		t.Fatalf("Len() = %d; want %d", got, n)
+	}
+	for i := range n {
+		v, ok := c.Get(i)
+		if !ok || v != i {
+			t.Fatalf("Get(%d) = %d, %v; want %d, true", i, v, ok, i)
+		}
+	}
+
+	// Overwrite every key; count must stay the same (no duplicate slots).
+	for i := range n {
+		c.Set(i, i*2)
+	}
+	if got := c.Len(); got != n {
+		t.Fatalf("Len() after overwrite = %d; want %d", got, n)
+	}
+	for i := range n {
+		v, ok := c.Get(i)
+		if !ok || v != i*2 {
+			t.Fatalf("Get(%d) after overwrite = %d, %v; want %d, true", i, v, ok, i*2)
+		}
+	}
+}
+
+func TestWithCapacity(t *testing.T) {
+	c := New[int, int](WithShardCount(8), WithCapacity(1000))
+
+	for i := range 1000 {
+		c.Set(i, i*2)
+	}
+	if got := c.Len(); got != 1000 {
+		t.Fatalf("Len() = %d; want 1000", got)
+	}
+	for i := range 1000 {
+		v, ok := c.Get(i)
+		if !ok || v != i*2 {
+			t.Fatalf("Get(%d) = %d, %v; want %d, true", i, v, ok, i*2)
+		}
+	}
+}
+
+// TestHashCollisions verifies correctness when many keys land in the same
+// shard and probe past each other (small shard count forces this even
+// without deliberately colliding hashes).
+func TestHashCollisions(t *testing.T) {
+	c := New[string, int](WithShardCount(1))
+
+	entries := make([]Entry[string, int], 0, 5000)
+	for i := range 5000 {
+		entries = append(entries, Entry[string, int]{Key: fmt.Sprintf("key-%d", i), Value: i})
+	}
+	c.SetMany(entries)
+
+	for i := range 5000 {
+		key := fmt.Sprintf("key-%d", i)
+		v, ok := c.Get(key)
+		if !ok || v != i {
+			t.Fatalf("Get(%q) = %d, %v; want %d, true", key, v, ok, i)
+		}
+	}
+	if got := c.Len(); got != 5000 {
+		t.Fatalf("Len() = %d; want 5000", got)
+	}
+}

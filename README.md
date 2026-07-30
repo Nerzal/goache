@@ -20,17 +20,21 @@ c.SetMany([]goache.Entry[string, int]{
     {Key: "b", Value: 2},
     {Key: "c", Value: 3},
 })
+
+// Know roughly how many items you're loading upfront? Pre-size to skip
+// Go's incremental map growth entirely — see Benchmarks below.
+c2 := goache.New[string, int](goache.WithCapacity(10000))
 ```
 
 ## Architecture
 
-`Cache[K comparable, V any]` shards keys across N independently-locked segments (`sync.RWMutex` per shard, `hash/maphash.Comparable` for routing) instead of one global lock or `sync.Map`. See the package doc comment in `cache.go` for the full reasoning, including why Go's experimental `arena` package was evaluated and rejected for this phase.
+`Cache[K comparable, V any]` shards keys across N independently-locked segments (`sync.RWMutex` per shard, `hash/maphash.Comparable` for routing) instead of one global lock or `sync.Map`. See the package doc comment in `cache.go` for the full reasoning, including why Go's experimental `arena` package was evaluated and rejected for this phase, and two optimizations that were tried and measured as regressions (a contiguous shard-value-slice layout, and a custom open-addressed per-shard table replacing Go's map) — both reverted, kept only as documented lessons.
 
-Phase 1 scope: `Set`, `SetMany`, `Get`. No eviction/TTL yet (planned for phase 2).
+Phase 1 scope: `Set`, `SetMany`, `Get`, `WithCapacity` (pre-sizing). No eviction/TTL yet (planned for phase 2).
 
 ## Benchmarks
 
-Run: `go test -bench=. -benchmem -run=^$ ./...`
+Run: `make bench` (or `go test -bench=. -benchmem -run=^$ ./...`). Charts below are regenerated with `make charts` after updating the numbers in this file — see `docs/benchcharts/main.go`.
 
 Last measured on AMD Ryzen AI 9 HX 370 (24 threads), Go 1.26.2:
 
@@ -44,6 +48,21 @@ BenchmarkParallelGet-24      280135519     4.399 ns/op    0 B/op   0 allocs/op
 ```
 
 `Set`/`Get` are zero-allocation on the hot path. `SetMany`'s single alloc/op comes from its per-call shard-bucket grouping (scales with shard count, not batch size); `GetMiss`'s alloc is the benchmark's own key-string construction, not the cache.
+
+![goache core operations benchmark chart](docs/img/core-ops.svg)
+
+### Ingestion: `WithCapacity` pre-sizing
+
+Bulk-loading a fresh cache when the final size is roughly known upfront (`BenchmarkFreshLoad_*`, 10k entries via `SetMany` into a brand-new `Cache`):
+
+```
+BenchmarkFreshLoad_NoHint-24              1509    793654 ns/op   1579119 B/op   4232 allocs/op
+BenchmarkFreshLoad_WithCapacityHint-24    2589    475442 ns/op   1192161 B/op   2973 allocs/op
+```
+
+![WithCapacity ingestion benchmark chart](docs/img/capacity-hint.svg)
+
+`WithCapacity` pre-sizes every shard's map so bulk inserts skip Go's incremental map growth/rehashing almost entirely: **~38% faster, ~25% fewer allocations, ~25% less memory** for a fresh bulk load. Use it whenever you know the approximate final size upfront (e.g. loading a fixed data set at startup).
 
 ## Comparison with other Go cache libraries
 
@@ -74,6 +93,10 @@ BenchmarkRistretto_Set-24            3619807   353.8 ns/op     85 B/op   1 alloc
 BenchmarkRistretto_Get-24            7817079   150.4 ns/op      7 B/op   0 allocs/op
 BenchmarkRistretto_ParallelGet-24  100000000    10.01 ns/op      0 B/op   0 allocs/op
 ```
+
+![Set benchmark comparison chart](docs/img/compare-set.svg)
+
+![Parallel Get benchmark comparison chart](docs/img/compare-parallel-get.svg)
 
 Takeaways:
 

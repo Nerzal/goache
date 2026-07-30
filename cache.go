@@ -31,8 +31,19 @@
 //
 // Instead, allocation pressure is kept low by: storing values inline in the
 // map (no interface{} boxing, since V is a concrete generic type param),
-// pre-sizing shard maps on creation, and batching multi-key writes so the
-// map only rehashes/grows as needed rather than once per key.
+// pre-sizing shard maps via WithCapacity when the final size is known
+// upfront (see New), and batching multi-key writes (SetMany) so the map
+// only rehashes/grows as needed rather than once per key.
+//
+// A hand-rolled open-addressed per-shard table (avoiding Go's map entirely,
+// to skip the redundant internal re-hash of a key already hashed once for
+// shard routing) was tried and measured 2.4-3.5x *slower* across Set/Get/
+// parallel-Get than the plain Go map used here. Go's map runtime uses
+// SIMD-friendly grouped buckets with a tophash pre-filter and incremental
+// (non-stop-the-world) resizing — reproducing that level of engineering in
+// pure Go isn't worth attempting again without a much larger effort than
+// the one redundant hash call saves. Don't re-attempt this without new
+// evidence it can actually win.
 package goache
 
 import (
@@ -86,6 +97,7 @@ type Option func(*config)
 
 type config struct {
 	shardCount int
+	capacity   int
 }
 
 // WithShardCount sets the number of shards the cache is split into. The
@@ -95,6 +107,18 @@ type config struct {
 func WithShardCount(n int) Option {
 	return func(c *config) {
 		c.shardCount = n
+	}
+}
+
+// WithCapacity pre-sizes every shard's underlying map for roughly n total
+// items (split evenly across shards), so bulk-loading close to n items
+// avoids Go's incremental map growth/rehashing entirely. Use this whenever
+// the approximate final size is known upfront — e.g. loading a fixed data
+// set at startup — since it turns many small map growths into zero.
+// Ignored if n <= 0.
+func WithCapacity(n int) Option {
+	return func(c *config) {
+		c.capacity = n
 	}
 }
 
@@ -109,9 +133,14 @@ func New[K comparable, V any](opts ...Option) *Cache[K, V] {
 	}
 	n := nextPowerOfTwo(cfg.shardCount)
 
+	perShard := 0
+	if cfg.capacity > 0 {
+		perShard = (cfg.capacity + n - 1) / n
+	}
+
 	shards := make([]*shard[K, V], n)
 	for i := range shards {
-		shards[i] = &shard[K, V]{data: make(map[K]entry[V])}
+		shards[i] = &shard[K, V]{data: make(map[K]entry[V], perShard)}
 	}
 
 	return &Cache[K, V]{
