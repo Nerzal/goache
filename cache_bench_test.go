@@ -3,6 +3,7 @@ package goache
 import (
 	"strconv"
 	"testing"
+	"time"
 )
 
 func benchKeys(n int) []string {
@@ -128,6 +129,58 @@ func BenchmarkFreshLoad_WithCapacityHint(b *testing.B) {
 	for b.Loop() {
 		c := New[string, int](WithCapacity(n))
 		c.SetMany(entries)
+	}
+}
+
+// BenchmarkSetWithTTL / BenchmarkGetWithTTL measure the TTL-using path —
+// compare against BenchmarkSet / BenchmarkGet above to see TTL's cost when
+// it's actually used (Get against a non-TTL entry should show ~zero
+// difference from BenchmarkGet, since the clock is only read when the
+// found entry's expiresAt is non-zero).
+
+func BenchmarkSetWithTTL(b *testing.B) {
+	c := New[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		c.SetWithTTL(keys[i%n], i, time.Hour)
+		i++
+	}
+}
+
+func BenchmarkGetWithTTL(b *testing.B) {
+	c := New[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.SetWithTTL(k, i, time.Hour)
+	}
+
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		c.Get(keys[i%n])
+		i++
+	}
+}
+
+func BenchmarkPurge(b *testing.B) {
+	const n = 100000
+	keys := benchKeys(n)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		b.StopTimer()
+		c := New[string, int]()
+		for i, k := range keys {
+			c.SetWithTTL(k, i, time.Nanosecond)
+		}
+		time.Sleep(time.Millisecond)
+		b.StartTimer()
+
+		c.Purge()
 	}
 }
 

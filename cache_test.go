@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestSetGet(t *testing.T) {
@@ -91,6 +92,45 @@ func TestConcurrentSetGet(t *testing.T) {
 	}
 }
 
+func TestConcurrentTTLAndPurge(t *testing.T) {
+	c := New[int, int](WithShardCount(16))
+	const goroutines = 8
+	const iterations = 2000
+
+	var wg sync.WaitGroup
+
+	for g := range goroutines {
+		wg.Go(func() {
+			for i := range iterations {
+				key := g*iterations + i
+				if i%2 == 0 {
+					c.SetWithTTL(key, key, time.Millisecond)
+				} else {
+					c.Set(key, key)
+				}
+			}
+		})
+	}
+
+	for range goroutines {
+		wg.Go(func() {
+			for i := range iterations {
+				c.Get(i)
+			}
+		})
+	}
+
+	for range 4 {
+		wg.Go(func() {
+			for range iterations {
+				c.Purge()
+			}
+		})
+	}
+
+	wg.Wait()
+}
+
 func TestConcurrentMixedReadWrite(t *testing.T) {
 	c := New[int, int](WithShardCount(16))
 	const key = 42
@@ -174,6 +214,89 @@ func TestWithCapacity(t *testing.T) {
 		if !ok || v != i*2 {
 			t.Fatalf("Get(%d) = %d, %v; want %d, true", i, v, ok, i*2)
 		}
+	}
+}
+
+func TestSetWithTTL(t *testing.T) {
+	c := New[string, int]()
+
+	c.SetWithTTL("short", 1, 10*time.Millisecond)
+	c.Set("forever", 2)
+
+	if v, ok := c.Get("short"); !ok || v != 1 {
+		t.Fatalf("Get(short) before expiry = %d, %v; want 1, true", v, ok)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	if _, ok := c.Get("short"); ok {
+		t.Fatalf("Get(short) after expiry: found, want miss")
+	}
+	if v, ok := c.Get("forever"); !ok || v != 2 {
+		t.Fatalf("Get(forever) = %d, %v; want 2, true (no TTL set)", v, ok)
+	}
+}
+
+func TestSetWithTTLNonPositiveMeansNoExpiry(t *testing.T) {
+	c := New[string, int]()
+
+	c.SetWithTTL("zero", 1, 0)
+	c.SetWithTTL("negative", 2, -time.Second)
+
+	time.Sleep(10 * time.Millisecond)
+
+	if v, ok := c.Get("zero"); !ok || v != 1 {
+		t.Fatalf("Get(zero) = %d, %v; want 1, true", v, ok)
+	}
+	if v, ok := c.Get("negative"); !ok || v != 2 {
+		t.Fatalf("Get(negative) = %d, %v; want 2, true", v, ok)
+	}
+}
+
+func TestSetManyWithMixedTTL(t *testing.T) {
+	c := New[string, int]()
+
+	c.SetMany([]Entry[string, int]{
+		{Key: "short", Value: 1, TTL: 10 * time.Millisecond},
+		{Key: "forever", Value: 2},
+	})
+
+	time.Sleep(50 * time.Millisecond)
+
+	if _, ok := c.Get("short"); ok {
+		t.Fatalf("Get(short) after expiry: found, want miss")
+	}
+	if v, ok := c.Get("forever"); !ok || v != 2 {
+		t.Fatalf("Get(forever) = %d, %v; want 2, true", v, ok)
+	}
+}
+
+func TestPurge(t *testing.T) {
+	c := New[string, int](WithShardCount(4))
+
+	c.SetWithTTL("short-a", 1, 10*time.Millisecond)
+	c.SetWithTTL("short-b", 2, 10*time.Millisecond)
+	c.Set("forever", 3)
+
+	if got := c.Len(); got != 3 {
+		t.Fatalf("Len() before purge = %d; want 3", got)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	if got := c.Purge(); got != 2 {
+		t.Fatalf("Purge() = %d; want 2", got)
+	}
+	if got := c.Len(); got != 1 {
+		t.Fatalf("Len() after purge = %d; want 1", got)
+	}
+	if v, ok := c.Get("forever"); !ok || v != 3 {
+		t.Fatalf("Get(forever) after purge = %d, %v; want 3, true", v, ok)
+	}
+
+	// Purging again finds nothing left to remove.
+	if got := c.Purge(); got != 0 {
+		t.Fatalf("second Purge() = %d; want 0", got)
 	}
 }
 

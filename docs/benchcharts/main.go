@@ -120,34 +120,45 @@ func main() {
 	// "Benchmarks" section (BenchmarkSet/SetMany/Get/GetMiss/
 	// ParallelGetSet/ParallelGet).
 	write(outDir, "core-ops.svg", renderBarChart("goache core operations (ns/op, lower is better)", "ns/op", []bar{
-		{label: "Set", value: 29.76},
-		{label: "SetMany", value: 84.56},
-		{label: "Get", value: 22.53},
-		{label: "GetMiss", value: 57.72},
-		{label: "ParallelGetSet", value: 7.793},
-		{label: "ParallelGet", value: 4.399},
+		{label: "Set", value: 30.82},
+		{label: "SetMany", value: 162.4},
+		{label: "Get", value: 25.71},
+		{label: "GetMiss", value: 65.04},
+		{label: "ParallelGetSet", value: 9.243},
+		{label: "ParallelGet", value: 4.562},
 	}))
 
 	// WithCapacity ingestion comparison — from README.md "Ingestion"
 	// section (BenchmarkFreshLoad_NoHint / _WithCapacityHint).
 	write(outDir, "capacity-hint.svg", renderBarChart("Fresh 10k-entry bulk load (ns/op, lower is better)", "ns/op", []bar{
-		{label: "No hint", value: 793654, highlight: false},
-		{label: "WithCapacity(10000)", value: 475442, highlight: true},
+		{label: "No hint", value: 2227967, highlight: false},
+		{label: "WithCapacity(10000)", value: 1708948, highlight: true},
+	}))
+
+	// Optional TTL overhead — from README.md "Optional TTL" section
+	// (BenchmarkSet/Get vs BenchmarkSetWithTTL/GetWithTTL). Shows the cost
+	// of TTL only on the path that actually uses it; the plain Set/Get
+	// bars are unaffected (see docs/adr/0012-entry-ttl-field-size-cost.md).
+	write(outDir, "ttl-overhead.svg", renderBarChart("TTL overhead: only the TTL path pays (ns/op, lower is better)", "ns/op", []bar{
+		{label: "Get (no TTL)", value: 25.71, highlight: true},
+		{label: "GetWithTTL", value: 33.98},
+		{label: "Set (no TTL)", value: 30.82, highlight: true},
+		{label: "SetWithTTL", value: 50.21},
 	}))
 
 	// Cross-library comparison — from README.md "Comparison with other
 	// Go cache libraries" section (bench/compare_test.go).
 	write(outDir, "compare-set.svg", renderBarChart("Set: goache vs other Go cache libraries (ns/op, lower is better)", "ns/op", []bar{
-		{label: "goache", value: 29.72, highlight: true},
-		{label: "go-cache", value: 43.14},
-		{label: "freecache", value: 146.2},
-		{label: "ristretto", value: 353.8},
+		{label: "goache", value: 29.84, highlight: true},
+		{label: "go-cache", value: 41.88},
+		{label: "freecache", value: 117.1},
+		{label: "ristretto", value: 344.0},
 	}))
 
 	write(outDir, "compare-parallel-get.svg", renderBarChart("Parallel Get: goache vs other Go cache libraries (ns/op, lower is better)", "ns/op", []bar{
-		{label: "goache", value: 4.470, highlight: true},
-		{label: "ristretto", value: 10.01},
-		{label: "freecache", value: 16.66},
-		{label: "go-cache", value: 36.80},
+		{label: "goache", value: 4.531, highlight: true},
+		{label: "ristretto", value: 8.998},
+		{label: "freecache", value: 15.93},
+		{label: "go-cache", value: 36.86},
 	}))
 }
