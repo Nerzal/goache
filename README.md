@@ -67,15 +67,17 @@ Run: `make bench` (or `go test -bench=. -benchmem -run=^$ ./...`). Charts below 
 Last measured on AMD Ryzen AI 9 HX 370 (24 threads), Go 1.26.2:
 
 ```
-BenchmarkSet-24               36511621    33.11 ns/op     0 B/op   0 allocs/op
-BenchmarkSetMany-24           11325604   100.9 ns/op    340 B/op   2 allocs/op
-BenchmarkGet-24               50532698    24.16 ns/op     0 B/op   0 allocs/op
-BenchmarkGetMiss-24           21118878    56.01 ns/op     7 B/op   0 allocs/op
-BenchmarkParallelGetSet-24   159923641     7.366 ns/op    0 B/op   0 allocs/op
-BenchmarkParallelGet-24     216752355     5.474 ns/op    0 B/op   0 allocs/op
+BenchmarkSet-24               34777144    34.37 ns/op     0 B/op   0 allocs/op
+BenchmarkSetMany-24           10939521   107.5 ns/op    340 B/op   2 allocs/op
+BenchmarkGet-24               51261240    23.65 ns/op     0 B/op   0 allocs/op
+BenchmarkGetMiss-24           21839464    57.47 ns/op     7 B/op   0 allocs/op
+BenchmarkParallelGetSet-24   184743710     6.285 ns/op    0 B/op   0 allocs/op
+BenchmarkParallelGet-24     258027836     4.540 ns/op    0 B/op   0 allocs/op
 ```
 
 `Set`/`Get` are zero-allocation on the hot path — both cycle over the same fixed 100k-key pool, so after the first pass every call overwrites an already-allocated entry rather than inserting a new one. `SetMany`'s benchmark never repeats a key, so it shows the real cost of a cold insert: 2 allocs/op (the per-call shard-bucket grouping, same as before, plus one now-unavoidable heap allocation per new entry — see "Automatic eviction" below for why entries became individually heap-allocated). `GetMiss`'s alloc is the benchmark's own key-string construction, not the cache.
+
+`ParallelGetSet`/`ParallelGet` dropped ~15-20% from prior numbers (7.366→6.285, 5.474→4.540) after padding each shard to a full cache line in a contiguous `[]shard[K, V]` slice, removing false sharing between adjacent shards' mutexes — see [docs/adr/0018](docs/adr/0018-gemini-analysis-experiments.md), which supersedes [docs/adr/0004](docs/adr/0004-shard-storage-pointer-slice.md)'s earlier (unpadded) measurement. Single-threaded `Set`/`Get` are flat, as expected — false sharing is a multi-core effect.
 
 ![goache core operations benchmark chart](docs/img/core-ops.svg)
 
@@ -84,8 +86,8 @@ BenchmarkParallelGet-24     216752355     5.474 ns/op    0 B/op   0 allocs/op
 Bulk-loading a fresh cache when the final size is roughly known upfront (`BenchmarkFreshLoad_*`, 10k entries via `SetMany` into a brand-new `Cache`):
 
 ```
-BenchmarkFreshLoad_NoHint-24                1185   1046916 ns/op   2500254 B/op   14263 allocs/op
-BenchmarkFreshLoad_WithCapacityHint-24      1390    867609 ns/op   2113998 B/op   13004 allocs/op
+BenchmarkFreshLoad_NoHint-24                1286   1002250 ns/op   2518315 B/op   14008 allocs/op
+BenchmarkFreshLoad_WithCapacityHint-24      1504    835974 ns/op   2132230 B/op   12749 allocs/op
 ```
 
 ![WithCapacity ingestion benchmark chart](docs/img/capacity-hint.svg)
@@ -97,9 +99,9 @@ BenchmarkFreshLoad_WithCapacityHint-24      1390    867609 ns/op   2113998 B/op 
 `SetWithTTL`/`Entry.TTL` let individual entries expire. The clock is only read when the *found* entry actually has a TTL, so looking up a plain `Set`/`SetMany` entry (no TTL) costs exactly what `Get` costs above — the numbers below are `BenchmarkSetWithTTL`/`BenchmarkGetWithTTL` (against entries that *do* have a TTL) next to the plain `Set`/`Get` numbers for comparison, plus `BenchmarkPurge` (sweeping 100k already-expired entries across 256 shards):
 
 ```
-BenchmarkSetWithTTL-24      28676715    41.82 ns/op     0 B/op   0 allocs/op
-BenchmarkGetWithTTL-24      42074113    28.45 ns/op     0 B/op   0 allocs/op
-BenchmarkPurge-24                205   5698202 ns/op     0 B/op   0 allocs/op
+BenchmarkSetWithTTL-24      28673973    41.80 ns/op     0 B/op   0 allocs/op
+BenchmarkGetWithTTL-24      42198394    27.82 ns/op     0 B/op   0 allocs/op
+BenchmarkPurge-24                226   5398072 ns/op     0 B/op   0 allocs/op
 ```
 
 ![TTL overhead benchmark chart](docs/img/ttl-overhead.svg)
@@ -113,12 +115,12 @@ BenchmarkPurge-24                205   5698202 ns/op     0 B/op   0 allocs/op
 `Delete` and `DeleteMany` follow the same shape as `Set`/`SetMany` — `DeleteMany` groups keys by destination shard so each shard's lock is acquired once regardless of how many keys are being removed. `Clear` empties every shard using Go's builtin `clear()`, which is fast enough that isolating its cost from cache (re)population isn't meaningful the way `Purge`'s cost is — `BenchmarkClear` below measures populate-then-Clear together (same shape as `BenchmarkFreshLoad_NoHint`); Clear's own marginal cost is roughly the difference between the two numbers.
 
 ```
-BenchmarkDelete-24         30425191    38.61 ns/op      0 B/op   0 allocs/op
-BenchmarkDeleteMany-24     16903003    69.04 ns/op     84 B/op   1 allocs/op
-BenchmarkClear-24                 96  10800829 ns/op   22967535 B/op   106661 allocs/op
+BenchmarkDelete-24         30161589    38.99 ns/op      0 B/op   0 allocs/op
+BenchmarkDeleteMany-24     17361588    67.38 ns/op     84 B/op   1 allocs/op
+BenchmarkClear-24                 98  11021529 ns/op   22987145 B/op   106406 allocs/op
 ```
 
-`Delete` is zero-allocation, same cost class as `Set`. `DeleteMany`'s single alloc/op is the same per-call shard-bucket grouping cost `SetMany` already pays. `Clear`'s number includes populating a fresh 100k-entry cache first (see `BenchmarkFreshLoad_NoHint` above, ~1.05ms) — the `Clear()` call itself only accounts for a fraction of the ~10.8ms total; the rest, including essentially all 106661 allocs/op, is the `SetMany` population that precedes it in the benchmark (see "Automatic eviction" below for why every new key now allocates).
+`Delete` is zero-allocation, same cost class as `Set`. `DeleteMany`'s single alloc/op is the same per-call shard-bucket grouping cost `SetMany` already pays. `Clear`'s number includes populating a fresh 100k-entry cache first (see `BenchmarkFreshLoad_NoHint` above, ~1.0ms) — the `Clear()` call itself only accounts for a fraction of the ~11.0ms total; the rest, including essentially all 106406 allocs/op, is the `SetMany` population that precedes it in the benchmark (see "Automatic eviction" below for why every new key now allocates). Note `Delete`/`DeleteMany`/`Clear` here all run against an *unbounded* cache (no `WithMaxSize`) — they deliberately never touch the entry pool described below, since nothing on the unbounded path ever draws from it (see [docs/adr/0018](docs/adr/0018-gemini-analysis-experiments.md)).
 
 ### Automatic eviction: `WithMaxSize`
 
@@ -130,16 +132,17 @@ BenchmarkClear-24                 96  10800829 ns/op   22967535 B/op   106661 al
 CLOCK keeps `Get` at effectively its current cost: each entry carries one atomic "referenced" bit, flipped by `Get` with a plain atomic store — no write lock, no ring mutation. Eviction (which does need the write lock) walks a per-shard circular ring from a "hand" pointer, clearing the bit on anything it finds set and evicting the first entry it finds already clear.
 
 ```
-BenchmarkSetWithMaxSize-24    8229819   130.8 ns/op     64 B/op   1 allocs/op
-BenchmarkGetWithMaxSize-24   40648065    26.20 ns/op     0 B/op   0 allocs/op
-BenchmarkEvictionChurn-24     6266422   174.9 ns/op     72 B/op   2 allocs/op
+BenchmarkSetWithMaxSize-24   15540778    76.00 ns/op     0 B/op   0 allocs/op
+BenchmarkGetWithMaxSize-24   45966795    26.48 ns/op     0 B/op   0 allocs/op
+BenchmarkEvictionChurn-24    10666078   115.0 ns/op      8 B/op   1 allocs/op
+BenchmarkParallelGetWithMaxSize-24 251821138   4.753 ns/op   0 B/op   0 allocs/op
 ```
 
 ![Eviction cost benchmark chart](docs/img/eviction-cost.svg)
 
-`GetWithMaxSize` is barely different from plain `Get` (26.20 vs 24.16 ns/op) — the only added cost is one atomic bit store. `BenchmarkSetWithMaxSize` (cache capped at half the key pool, so roughly every other `Set` evicts) and `BenchmarkEvictionChurn` (cache always full, *every* `Set` evicts) show the real cost of enabling eviction: roughly 100-140 ns/op above plain `Set`'s 33.11 ns/op, plus the one allocation every new key already pays (see below).
+`GetWithMaxSize` is barely different from plain `Get` (26.48 vs 23.65 ns/op) — the only added cost is one atomic bit store; `ParallelGetWithMaxSize` confirms this holds under concurrency too (4.753 ns/op, in line with plain `ParallelGet`'s 4.540). `BenchmarkSetWithMaxSize` (cache capped at half the key pool, so roughly every other `Set` evicts) and `BenchmarkEvictionChurn` (cache always full, *every* `Set` evicts) show the cost of enabling eviction: 76.00 and 115.0 ns/op respectively, both down substantially (~40% and ~31%) from earlier numbers (130.8 and 174.9 ns/op) after entries on `WithMaxSize`-bounded shards started recycling through a `sync.Pool` instead of always allocating fresh on every eviction-driven insert — allocs/op dropped from 1→0 and 2→1 accordingly. See [docs/adr/0018](docs/adr/0018-gemini-analysis-experiments.md) for the full measurement, including why this pooling is deliberately *not* applied to unbounded caches (it regressed `Delete`/`Clear`/`SetMany`/`FreshLoad_*` there in an earlier, cache-wide attempt, since nothing ever draws those entries back out of a pool that's never drained by eviction).
 
-**Supporting this required a real, unconditional cost, not just an opt-in one**: to let `Get` flip that bit without taking a write lock, shard storage changed from `map[K]entry[V]` (values inlined in the map) to `map[K]*entry[K, V]` (individually heap-allocated entries) — for *every* `Cache`, whether or not `WithMaxSize` is ever called. Ring maintenance and the eviction sweep itself are skipped entirely when no limit is configured, but the pointer-per-entry storage isn't. In practice this cost is small for steady-state workloads (see the core-ops numbers above — cycling over an existing key pool almost never allocates, since overwrites reuse the existing pointer) but real for cold-insert-heavy and full-sweep workloads (`SetMany`, `FreshLoad_*`, `Purge`, `Clear` above all moved). [docs/adr/0016](docs/adr/0016-clock-eviction.md) has the full before/after measurement and reasoning, including a locality regression on full-map sweeps that's separate from the allocation-count increase.
+**Supporting eviction at all still requires a real, unconditional cost, not just an opt-in one**: to let `Get` flip the CLOCK bit without taking a write lock, shard storage changed from `map[K]entry[V]` (values inlined in the map) to `map[K]*entry[K, V]` (individually heap-allocated entries) — for *every* `Cache`, whether or not `WithMaxSize` is ever called. Ring maintenance, the eviction sweep, and pool interaction are all skipped entirely when no limit is configured, but the pointer-per-entry storage isn't. In practice this cost is small for steady-state workloads (see the core-ops numbers above — cycling over an existing key pool almost never allocates, since overwrites reuse the existing pointer) but real for cold-insert-heavy and full-sweep workloads on unbounded caches (`SetMany`, `FreshLoad_*`, `Purge`, `Clear` above all moved from the pre-eviction baseline). [docs/adr/0016](docs/adr/0016-clock-eviction.md) has the full before/after measurement and reasoning, including a locality regression on full-map sweeps that's separate from the allocation-count increase.
 
 ## Comparison with other Go cache libraries
 
@@ -155,13 +158,13 @@ Against:
 
 See [docs/competitor-analysis.md](docs/competitor-analysis.md) for what each library trades off qualitatively, and [docs/adr/0017-size-parametrized-benchmarks.md](docs/adr/0017-size-parametrized-benchmarks.md) for the benchmark methodology below: every category runs at five working-set sizes (1,000 / 5,000 / 50,000 / 100,000 / 1,000,000 entries), and covers every feature goache has an equivalent for — not just the unbounded Set/Get/ParallelGet baseline, but per-entry TTL, `Delete` (measured as delete-then-reinsert churn — see the ADR for why), and bounded/eviction behavior (for the libraries that have a comparable size-bounded eviction knob: goache's `WithMaxSize`, theine, otter, ristretto — go-cache has no eviction and freecache bounds by byte size, not entry count, so neither has one).
 
-Machine: AMD Ryzen AI 9 HX 370 (24 threads), Go 1.26.2. All tables are ns/op, lower is better. **These numbers are from a single clean run** (no other work running in parallel on this machine while it executed — see [docs/adr/0017](docs/adr/0017-size-parametrized-benchmarks.md)'s update on why that matters: two independent clean runs of this exact suite produced meaningfully different numbers for ristretto and theine specifically, discussed in the takeaways below).
+Machine: AMD Ryzen AI 9 HX 370 (24 threads), Go 1.26.2. All tables are ns/op, lower is better. **Mixed provenance, noted for transparency**: the five competitor libraries' numbers are from a single clean run (no other work running in parallel on this machine while it executed — see [docs/adr/0017](docs/adr/0017-size-parametrized-benchmarks.md)'s update on why that matters: two independent clean runs of this exact suite produced meaningfully different numbers for ristretto and theine specifically, discussed in the takeaways below). goache's own rows were re-measured afterward, alone (`go test -bench='^BenchmarkGoache_'`), after [docs/adr/0018](docs/adr/0018-gemini-analysis-experiments.md)'s changes to `cache.go` — only goache's implementation changed, the competitor libraries and their code didn't, so re-running just goache's benchmarks to refresh its own rows is valid without re-running the full comparison; but this does mean goache's cells and the other five libraries' cells were measured in separate runs, not the same one.
 
 ### Set
 
 | Library | 1,000 | 5,000 | 50,000 | 100,000 | 1,000,000 |
 |---|---|---|---|---|---|
-| goache | 27.79 | 23.12 | 27.68 | 30.03 | 111.0 |
+| goache | 27.91 | 23.78 | 28.72 | 32.63 | 127.2 |
 | go-cache | 28.27 | 30.07 | 35.28 | 39.11 | 130.6 |
 | freecache | 35.83 | 36.63 | 59.13 | 86.50 | 187.0 |
 | otter | 139.7 | 130.7 | 133.2 | 137.6 | 225.8 |
@@ -173,7 +176,7 @@ Machine: AMD Ryzen AI 9 HX 370 (24 threads), Go 1.26.2. All tables are ns/op, lo
 | Library | 1,000 | 5,000 | 50,000 | 100,000 | 1,000,000 |
 |---|---|---|---|---|---|
 | go-cache | 12.94 | 12.56 | 15.79 | 17.40 | 70.39 |
-| goache | 23.08 | 16.76 | 21.00 | 22.84 | 84.78 |
+| goache | 22.77 | 16.67 | 21.01 | 23.84 | 87.98 |
 | otter | 34.71 | 35.01 | 37.89 | 40.79 | 149.2 |
 | ristretto | 42.59 | 41.93 | 61.51 | 79.35 | 178.5 |
 | freecache | 47.67 | 48.57 | 72.66 | 108.4 | 208.3 |
@@ -183,9 +186,9 @@ Machine: AMD Ryzen AI 9 HX 370 (24 threads), Go 1.26.2. All tables are ns/op, lo
 
 | Library | 1,000 | 5,000 | 50,000 | 100,000 | 1,000,000 |
 |---|---|---|---|---|---|
+| goache | 5.673 | 4.573 | 4.235 | 4.578 | 9.250 |
 | otter | 3.262 | 6.722 | 7.479 | 5.980 | 9.934 |
 | theine | 5.258 | 5.220 | 5.978 | 6.324 | 10.52 |
-| goache | 6.930 | 6.052 | 5.799 | 6.116 | 11.03 |
 | ristretto | 9.079 | 8.217 | 7.534 | 8.674 | 10.88 |
 | freecache | 14.59 | 14.95 | 15.39 | 15.66 | 17.59 |
 | go-cache | 36.74 | 37.01 | 37.05 | 36.61 | 38.42 |
@@ -196,7 +199,7 @@ otter has no per-`Set` TTL argument — it configures a fixed write-based expiry
 
 | Library | 1,000 | 5,000 | 50,000 | 100,000 | 1,000,000 |
 |---|---|---|---|---|---|
-| goache | 34.94 | 29.84 | 37.41 | 41.23 | 173.2 |
+| goache | 35.33 | 30.91 | 37.67 | 42.10 | 171.7 |
 | go-cache | 34.41 | 36.26 | 46.66 | 51.80 | 201.2 |
 | freecache | 36.32 | 38.01 | 63.18 | 88.99 | 194.8 |
 | otter | 159.2 | 159.2 | 168.8 | 174.2 | 260.6 |
@@ -208,7 +211,7 @@ otter has no per-`Set` TTL argument — it configures a fixed write-based expiry
 | Library | 1,000 | 5,000 | 50,000 | 100,000 | 1,000,000 |
 |---|---|---|---|---|---|
 | go-cache | 14.10 | 14.98 | 20.59 | 22.70 | 94.21 |
-| goache | 26.83 | 20.93 | 25.87 | 28.66 | 95.05 |
+| goache | 28.26 | 21.08 | 26.07 | 28.35 | 93.24 |
 | otter | 47.96 | 50.17 | 54.57 | 59.86 | 163.2 |
 | ristretto | 47.16 | 46.00 | 58.42 | 94.23 | 187.8 |
 | freecache | 47.64 | 48.50 | 74.35 | 106.1 | 211.9 |
@@ -220,7 +223,7 @@ otter has no per-`Set` TTL argument — it configures a fixed write-based expiry
 |---|---|---|---|---|---|
 | go-cache | 53.64 | 58.12 | 68.42 | 72.00 | 191.4 |
 | freecache | 83.20 | 102.9 | 159.0 | 200.4 | 274.5 |
-| goache | 92.15 | 108.6 | 120.6 | 125.8 | 219.5 |
+| goache | 93.27 | 105.1 | 118.9 | 123.7 | 220.5 |
 | otter | 225.0 | 226.0 | 243.7 | 257.1 | 361.5 |
 | theine | 408.9 | 418.1 | 431.3 | 492.9 | 583.1 |
 | ristretto | 485.0 | 471.8 | 514.6 | 537.1 | 649.0 |
@@ -229,7 +232,7 @@ otter has no per-`Set` TTL argument — it configures a fixed write-based expiry
 
 | Library | 1,000 | 5,000 | 50,000 | 100,000 | 1,000,000 |
 |---|---|---|---|---|---|
-| goache | 72.56 | 92.65 | 118.7 | 133.5 | 254.5 |
+| goache | 45.79 | 60.17 | 68.70 | 111.4 | 250.2 |
 | otter | 140.9 | 131.3 | 156.1 | 159.9 | 237.3 |
 | ristretto | 125.5 | 108.6 | 104.0 | 89.94 | 76.34 |
 | theine | 199.4 | 190.3 | 184.8 | 233.1 | 347.5 |
@@ -240,10 +243,11 @@ otter has no per-`Set` TTL argument — it configures a fixed write-based expiry
 
 Takeaways:
 
-- **Every library's single-threaded `Get` degrades noticeably from 1,000 to 1,000,000 entries** (go-cache 12.94→70.39, goache 23.08→84.78, otter 34.71→149.2, ristretto 42.59→178.5, theine 87.17→286.4) — a universal effect of the working set outgrowing CPU cache, not specific to any one library's design. goache's *relative* degradation is in line with everyone else's, and its *absolute* numbers stay competitive throughout.
-- **Under real concurrency, sharded/striped designs hold their ground at every size**: goache, otter, and theine all stay roughly in the 5-11 ns/op range even at 1,000,000 entries, while go-cache's single global lock is essentially flat regardless of size (36.7 → 38.4 ns/op) — it was never bottlenecked by cache size, only by lock contention, and that bottleneck doesn't change no matter how big the map gets. This is the sharding argument playing out exactly as designed, confirmed at 1,000x the original single-size comparison's scale.
+- **Every library's single-threaded `Get` degrades noticeably from 1,000 to 1,000,000 entries** (go-cache 12.94→70.39, goache 22.77→87.98, otter 34.71→149.2, ristretto 42.59→178.5, theine 87.17→286.4) — a universal effect of the working set outgrowing CPU cache, not specific to any one library's design. goache's *relative* degradation is in line with everyone else's, and its *absolute* numbers stay competitive throughout.
+- **Under real concurrency, sharded/striped designs hold their ground at every size**: goache, otter, and theine all stay roughly in the 4-11 ns/op range even at 1,000,000 entries, while go-cache's single global lock is essentially flat regardless of size (36.7 → 38.4 ns/op) — it was never bottlenecked by cache size, only by lock contention, and that bottleneck doesn't change no matter how big the map gets. This is the sharding argument playing out exactly as designed, confirmed at 1,000x the original single-size comparison's scale.
+- **goache now leads `ParallelGet` at every size except n=1,000** (see the reordered table above), after padding each shard to a cache line to remove false sharing between adjacent shards ([docs/adr/0018](docs/adr/0018-gemini-analysis-experiments.md)) — previously it trailed both otter and theine at most sizes.
 - **ristretto and theine show real, substantial run-to-run variance — enough to flip a conclusion.** Re-running this exact suite (same machine, same code, a clean wait with no other work in parallel — see [docs/adr/0017](docs/adr/0017-size-parametrized-benchmarks.md)) moved theine's `Set` at n=1,000 from 271.7 to 157.1 ns/op (a ~42% swing) and, more importantly, **flipped ristretto's `Bounded` scaling trend**: the first run showed it essentially flat (111.6→117.8 ns/op, 1,000→1,000,000), this run shows it clearly *decreasing* with size (125.5→76.34 ns/op). goache, go-cache, freecache, and otter's numbers stayed consistent across both runs. The most plausible explanation is that ristretto's and theine's own internal async machinery (ristretto's buffered-write goroutines, theine's timer wheel and background maintenance) makes them more sensitive to scheduler noise than the synchronous libraries — meaning single-run comparisons involving those two specifically should be read as directional, not precise, and any conclusion drawn from one run of their numbers deserves a second run before being trusted.
-- **goache's `WithMaxSize` eviction cost does grow with cache size** (the "Bounded" table): 72.56 ns/op at 1,000 entries to 254.5 ns/op at 1,000,000, roughly 3.5x, consistent across both runs. This matches [ADR 0016](docs/adr/0016-clock-eviction.md)'s locality-regression finding: goache's CLOCK ring is an intrusive per-shard linked list of individually heap-allocated entries, so a bigger shard means a bigger, more cache-unfriendly ring to walk. Given the variance noted above, whether competitors' bounded-eviction cost scales better is genuinely unclear from this data — ristretto's own numbers moved in opposite directions between two clean runs — but goache's own upward trend is the one solid, reproduced finding here.
+- **goache's `WithMaxSize` eviction cost still grows with cache size** (the "Bounded" table): 45.79 ns/op at 1,000 entries to 250.2 ns/op at 1,000,000, roughly 5.5x — still matches [ADR 0016](docs/adr/0016-clock-eviction.md)'s locality-regression finding (goache's CLOCK ring is an intrusive per-shard linked list of individually heap-allocated entries, so a bigger shard means a bigger, more cache-unfriendly ring to walk), though the absolute numbers at smaller/mid sizes dropped substantially (roughly 35-40% at n=1,000-100,000) after gating `sync.Pool` entry recycling to `WithMaxSize`-bounded shards ([docs/adr/0018](docs/adr/0018-gemini-analysis-experiments.md)) — the pooling win shrinks at n=1,000,000, converging back to roughly the old number, which is itself worth noting rather than glossing over. Given the variance noted above, whether competitors' bounded-eviction cost scales better is genuinely unclear from this data — ristretto's own numbers moved in opposite directions between two clean runs — but goache's own upward trend is the one solid, reproduced finding here.
 - **`Set`**: goache is fastest at every size up to 100,000, and the only zero-allocation `Set` for repeated keys (see "Automatic eviction" above for the cold-insert cost `WithMaxSize` support added). Every admission-policy cache (theine, otter, ristretto) pays for eviction-policy bookkeeping on every `Set` — the trade goache's default (no eviction) opts out of.
 - **ristretto's `Set` is asynchronous and best-effort** (values can be dropped by its admission policy) — a materially different contract than goache's synchronous, always-succeeds `Set`. Not a drop-in semantic replacement, but included since it's the most commonly reached-for high-performance Go cache today.
 - **theine and otter are not drop-in semantic replacements either**: both implement W-TinyLFU admission/eviction, meaning `Set` can be a no-op if the entry loses the admission race — goache's `Set` always lands, whether or not `WithMaxSize` is configured; a full shard evicts something else to make room rather than rejecting the incoming write. Pick goache when you want guaranteed writes with a size bound whose cost is at least predictable (even if it grows with scale); pick theine/otter/ristretto when you need a hit-ratio-optimizing admission policy (better under skewed access patterns) and can accept probabilistic admission — and budget for their benchmark numbers being noisier run-to-run than goache's own.

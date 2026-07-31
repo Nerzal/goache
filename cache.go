@@ -45,6 +45,20 @@
 // the one redundant hash call saves. Don't re-attempt this without new
 // evidence it can actually win.
 //
+// Shards are stored as a contiguous []shard value slice, each padded to a
+// full cache line, rather than a []*shard pointer slice. An earlier version
+// of this cache used the pointer-slice form specifically to avoid false
+// sharing, since packing every shard's sync.RWMutex back-to-back with no
+// padding measured ~9% slower on concurrent Get. Adding padding instead of
+// giving up the contiguous layout measured ~15-20% *faster* on
+// BenchmarkParallelGet/BenchmarkParallelGetSet than the pointer-slice
+// version — the padding prevents the false sharing the pointer-slice was
+// working around, while the value slice still saves one pointer
+// dereference and one heap object per shard access. See
+// docs/adr/0018-gemini-analysis-experiments.md for the measurements; it
+// supersedes docs/adr/0004's pointer-slice conclusion now that padding is
+// part of the comparison.
+//
 // # Optional per-entry TTL
 //
 // Entries may optionally expire: SetWithTTL and Entry.TTL (for SetMany) set
@@ -104,6 +118,18 @@
 // sweep itself) is skipped entirely when a shard has no configured limit,
 // so non-eviction users pay the one allocation per new key but no extra
 // CPU beyond that.
+//
+// Shards with a configured WithMaxSize limit recycle entries through a
+// sync.Pool: every eviction and every Delete/DeleteMany/Clear/Purge removal
+// returns its entry to the pool instead of abandoning it to the GC, and a
+// subsequent set for a new key takes one from the pool before falling back
+// to a fresh allocation. This measurably cuts both allocation count and
+// ns/op on sustained eviction churn (WithMaxSize Set, always-evicting
+// churn) — see docs/adr/0018-gemini-analysis-experiments.md. Unbounded
+// shards (no WithMaxSize) deliberately never touch the pool: nothing ever
+// calls evict() to reclaim into it, so a cold pool.Get() is pure overhead
+// over a plain allocation, and Delete/Clear/Purge stay exactly as cheap on
+// unbounded caches as they always were.
 package goache
 
 import (
@@ -162,12 +188,15 @@ type shard[K comparable, V any] struct {
 	data  map[K]*entry[K, V]
 	hand  *entry[K, V]
 	limit int
+	// _ pads the shard out so adjacent shards in Cache.shards don't share a
+	// cache line — see the package doc comment's shard-storage paragraph.
+	_ [64]byte
 }
 
 // set stores key/value (with the given absolute expiresAt deadline, 0 for
 // none) in the shard, evicting one entry first if the shard has a
 // configured limit and is already full. Caller must hold s.mu (write lock).
-func (s *shard[K, V]) set(key K, value V, expiresAt int64) {
+func (s *shard[K, V]) set(key K, value V, expiresAt int64, pool *sync.Pool) {
 	if e, ok := s.data[key]; ok {
 		e.value = value
 		e.expiresAt = expiresAt
@@ -177,11 +206,18 @@ func (s *shard[K, V]) set(key K, value V, expiresAt int64) {
 		return
 	}
 
-	if s.limit > 0 && len(s.data) >= s.limit {
-		s.evict()
+	var e *entry[K, V]
+	if s.limit > 0 {
+		if len(s.data) >= s.limit {
+			s.evict(pool)
+		}
+		e, _ = pool.Get().(*entry[K, V])
+	} else {
+		e = &entry[K, V]{}
 	}
-
-	e := &entry[K, V]{key: key, value: value, expiresAt: expiresAt}
+	e.key = key
+	e.value = value
+	e.expiresAt = expiresAt
 	s.data[key] = e
 	if s.limit > 0 {
 		s.linkNew(e)
@@ -222,7 +258,7 @@ func (s *shard[K, V]) removeFromRing(e *entry[K, V]) {
 // (clearing as it goes) any entry marked referenced, and remove the first
 // one that isn't. Caller must hold s.mu (write lock); s.limit must be > 0
 // and the shard must be non-empty (s.hand != nil).
-func (s *shard[K, V]) evict() {
+func (s *shard[K, V]) evict(pool *sync.Pool) {
 	e := s.hand
 	for e.referenced.Load() {
 		e.referenced.Store(false)
@@ -236,13 +272,16 @@ func (s *shard[K, V]) evict() {
 	s.removeFromRing(e)
 	delete(s.data, e.key)
 	s.hand = next
-	e.prev, e.next = nil, nil
+	release(e, pool)
 }
 
 // deleteEntry unlinks e (already removed from s.data by the caller) from
-// the CLOCK ring, fixing up s.hand if it pointed at e. Caller must hold
-// s.mu and s.limit must be > 0.
-func (s *shard[K, V]) deleteEntry(e *entry[K, V]) {
+// the CLOCK ring, fixing up s.hand if it pointed at e, and returns e to pool
+// for reuse by a future set. Caller must hold s.mu and s.limit must be > 0 —
+// unbounded shards never call this; there's no ring to maintain and nothing
+// ever calls pool.Get() to reclaim, so releasing to the pool would be pure
+// overhead with no payback (see the sync.Pool experiment writeup).
+func (s *shard[K, V]) deleteEntry(e *entry[K, V], pool *sync.Pool) {
 	if s.hand == e {
 		if e.next == e {
 			s.hand = nil
@@ -251,7 +290,21 @@ func (s *shard[K, V]) deleteEntry(e *entry[K, V]) {
 		}
 	}
 	s.removeFromRing(e)
+	release(e, pool)
+}
+
+// release zeroes e's key/value (so the pool doesn't keep a stale reference
+// alive past its natural lifetime) and returns it to pool for a future set
+// to reuse — see the package doc comment's "Automatic eviction" section.
+func release[K comparable, V any](e *entry[K, V], pool *sync.Pool) {
+	var zeroK K
+	var zeroV V
+	e.key = zeroK
+	e.value = zeroV
+	e.expiresAt = 0
+	e.referenced.Store(false)
 	e.prev, e.next = nil, nil
+	pool.Put(e)
 }
 
 // Entry is a key/value pair used for bulk operations. TTL is optional: zero
@@ -265,18 +318,18 @@ type Entry[K comparable, V any] struct {
 
 // Cache is a goroutine-safe, sharded key/value cache.
 type Cache[K comparable, V any] struct {
-	// shards is a pointer slice: each shard is its own heap allocation.
-	// A tried alternative — one contiguous []shard value slice — measured
-	// ~9% slower under concurrent access (see cache_bench_test.go /
-	// BenchmarkParallelGet history): packing every shard's sync.RWMutex
-	// back-to-back in one array puts adjacent shards' mutexes on shared
-	// cache lines, so unrelated shards contend over cache-line ownership
-	// (false sharing) even though they never contend over a lock. Separate
-	// heap objects avoid that at the cost of one extra pointer dereference
-	// per access, which is the cheaper trade-off here.
-	shards []*shard[K, V]
+	// shards is a contiguous value slice, each element padded to a cache
+	// line (see shard's own padding field) — see the package doc comment's
+	// shard-storage paragraph for why this beats a []*shard pointer slice
+	// once padding is in the picture.
+	shards []shard[K, V]
 	mask   uint64
 	seed   maphash.Seed
+	// entryPool recycles entry objects freed by Delete/DeleteMany/Clear/
+	// Purge/eviction on WithMaxSize-bounded shards so a subsequent set for
+	// a new key can reuse one instead of a fresh heap allocation — see the
+	// package doc comment's "Automatic eviction" section.
+	entryPool sync.Pool
 }
 
 // Option configures a Cache created with New.
@@ -343,16 +396,19 @@ func New[K comparable, V any](opts ...Option) *Cache[K, V] {
 		shardLimit = max((cfg.maxSize+n-1)/n, 1)
 	}
 
-	shards := make([]*shard[K, V], n)
+	shards := make([]shard[K, V], n)
 	for i := range shards {
-		shards[i] = &shard[K, V]{data: make(map[K]*entry[K, V], perShard), limit: shardLimit}
+		shards[i].data = make(map[K]*entry[K, V], perShard)
+		shards[i].limit = shardLimit
 	}
 
-	return &Cache[K, V]{
+	c := &Cache[K, V]{
 		shards: shards,
 		mask:   uint64(n - 1),
 		seed:   maphash.MakeSeed(),
 	}
+	c.entryPool.New = func() any { return &entry[K, V]{} }
+	return c
 }
 
 func nextPowerOfTwo(n int) int {
@@ -365,7 +421,7 @@ func nextPowerOfTwo(n int) int {
 
 func (c *Cache[K, V]) shardFor(key K) *shard[K, V] {
 	h := maphash.Comparable(c.seed, key)
-	return c.shards[h&c.mask]
+	return &c.shards[h&c.mask]
 }
 
 // Set adds or overwrites a single key/value pair with no expiry. Identical
@@ -373,7 +429,7 @@ func (c *Cache[K, V]) shardFor(key K) *shard[K, V] {
 func (c *Cache[K, V]) Set(key K, value V) {
 	s := c.shardFor(key)
 	s.mu.Lock()
-	s.set(key, value, 0)
+	s.set(key, value, 0, &c.entryPool)
 	s.mu.Unlock()
 }
 
@@ -387,7 +443,7 @@ func (c *Cache[K, V]) SetWithTTL(key K, value V, ttl time.Duration) {
 	}
 	s := c.shardFor(key)
 	s.mu.Lock()
-	s.set(key, value, expiresAt)
+	s.set(key, value, expiresAt, &c.entryPool)
 	s.mu.Unlock()
 }
 
@@ -414,7 +470,7 @@ func (c *Cache[K, V]) SetMany(entries []Entry[K, V]) {
 		if len(bucket) == 0 {
 			continue
 		}
-		s := c.shards[i]
+		s := &c.shards[i]
 		s.mu.Lock()
 		for _, e := range bucket {
 			var expiresAt int64
@@ -425,7 +481,7 @@ func (c *Cache[K, V]) SetMany(entries []Entry[K, V]) {
 				}
 				expiresAt = now.Add(e.TTL).UnixNano()
 			}
-			s.set(e.Key, e.Value, expiresAt)
+			s.set(e.Key, e.Value, expiresAt, &c.entryPool)
 		}
 		s.mu.Unlock()
 	}
@@ -470,7 +526,7 @@ func (c *Cache[K, V]) Delete(key K) {
 	if e, ok := s.data[key]; ok {
 		delete(s.data, key)
 		if s.limit > 0 {
-			s.deleteEntry(e)
+			s.deleteEntry(e, &c.entryPool)
 		}
 	}
 	s.mu.Unlock()
@@ -494,13 +550,13 @@ func (c *Cache[K, V]) DeleteMany(keys []K) {
 		if len(bucket) == 0 {
 			continue
 		}
-		s := c.shards[i]
+		s := &c.shards[i]
 		s.mu.Lock()
 		for _, k := range bucket {
 			if e, ok := s.data[k]; ok {
 				delete(s.data, k)
 				if s.limit > 0 {
-					s.deleteEntry(e)
+					s.deleteEntry(e, &c.entryPool)
 				}
 			}
 		}
@@ -516,8 +572,14 @@ func (c *Cache[K, V]) DeleteMany(keys []K) {
 // reachable from each other after this, and Go's tracing GC collects that
 // cycle normally once nothing outside references it).
 func (c *Cache[K, V]) Clear() {
-	for _, s := range c.shards {
+	for i := range c.shards {
+		s := &c.shards[i]
 		s.mu.Lock()
+		if s.limit > 0 {
+			for _, e := range s.data {
+				release(e, &c.entryPool)
+			}
+		}
 		clear(s.data)
 		s.hand = nil
 		s.mu.Unlock()
@@ -532,7 +594,8 @@ func (c *Cache[K, V]) Clear() {
 // an exact live count.
 func (c *Cache[K, V]) Len() int {
 	total := 0
-	for _, s := range c.shards {
+	for i := range c.shards {
+		s := &c.shards[i]
 		s.mu.RLock()
 		total += len(s.data)
 		s.mu.RUnlock()
@@ -550,13 +613,14 @@ func (c *Cache[K, V]) Len() int {
 func (c *Cache[K, V]) Purge() int {
 	now := time.Now().UnixNano()
 	removed := 0
-	for _, s := range c.shards {
+	for i := range c.shards {
+		s := &c.shards[i]
 		s.mu.Lock()
 		for k, e := range s.data {
 			if e.expired(now) {
 				delete(s.data, k)
 				if s.limit > 0 {
-					s.deleteEntry(e)
+					s.deleteEntry(e, &c.entryPool)
 				}
 				removed++
 			}

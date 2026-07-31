@@ -312,6 +312,64 @@ func BenchmarkEvictionChurn(b *testing.B) {
 	}
 }
 
+// BenchmarkParallelGetWithMaxSize measures concurrent Get against a
+// WithMaxSize-bounded cache — the one path where every hit does an atomic
+// store (the CLOCK "referenced" bit), unlike BenchmarkParallelGet's unbounded
+// cache where Get never touches shared state beyond the RWMutex. This is
+// where an unconditional Store(true) can cost more than a plain read under
+// heavy contention on the same keys: every Store invalidates that cache line
+// on every other core, even when the value doesn't change.
+// BenchmarkParallelGetSetWithTTL measures mixed concurrent Get/Set against
+// TTL entries specifically to see whether moving time.Now() outside Get's
+// read lock (an experiment from gemini-analysis.md) reduces write-side wait
+// time: a pending writer's Lock() call has to wait for every outstanding
+// RLock to release, so anything a reader does while holding that RLock
+// (including a time.Now() call) extends the writer's wait under contention.
+// A single-threaded benchmark can't show this since the calling goroutine
+// pays the same total time regardless of lock hold order.
+func BenchmarkParallelGetSetWithTTL(b *testing.B) {
+	c := New[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.SetWithTTL(k, i, time.Hour)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			k := keys[i%n]
+			if i%10 == 0 {
+				c.SetWithTTL(k, i, time.Hour)
+			} else {
+				c.Get(k)
+			}
+			i++
+		}
+	})
+}
+
+func BenchmarkParallelGetWithMaxSize(b *testing.B) {
+	const n = 100000
+	c := New[string, int](WithMaxSize(n))
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			c.Get(keys[i%n])
+			i++
+		}
+	})
+}
+
 func BenchmarkParallelGet(b *testing.B) {
 	c := New[string, int]()
 	const n = 100000

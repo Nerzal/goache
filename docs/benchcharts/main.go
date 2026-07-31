@@ -120,21 +120,21 @@ func main() {
 	// "Benchmarks" section (BenchmarkSet/SetMany/Get/GetMiss/
 	// ParallelGetSet/ParallelGet).
 	write(outDir, "core-ops.svg", renderBarChart("goache core operations (ns/op, lower is better)", "ns/op", []bar{
-		{label: "Set", value: 33.11},
-		{label: "SetMany", value: 100.9},
-		{label: "Get", value: 24.16},
-		{label: "GetMiss", value: 56.01},
-		{label: "ParallelGetSet", value: 7.366},
-		{label: "ParallelGet", value: 5.474},
-		{label: "Delete", value: 38.61},
-		{label: "DeleteMany", value: 69.04},
+		{label: "Set", value: 34.37},
+		{label: "SetMany", value: 107.5},
+		{label: "Get", value: 23.65},
+		{label: "GetMiss", value: 57.47},
+		{label: "ParallelGetSet", value: 6.285},
+		{label: "ParallelGet", value: 4.540},
+		{label: "Delete", value: 38.99},
+		{label: "DeleteMany", value: 67.38},
 	}))
 
 	// WithCapacity ingestion comparison — from README.md "Ingestion"
 	// section (BenchmarkFreshLoad_NoHint / _WithCapacityHint).
 	write(outDir, "capacity-hint.svg", renderBarChart("Fresh 10k-entry bulk load (ns/op, lower is better)", "ns/op", []bar{
-		{label: "No hint", value: 1046916, highlight: false},
-		{label: "WithCapacity(10000)", value: 867609, highlight: true},
+		{label: "No hint", value: 1002250, highlight: false},
+		{label: "WithCapacity(10000)", value: 835974, highlight: true},
 	}))
 
 	// Optional TTL overhead — from README.md "Optional TTL" section
@@ -142,10 +142,10 @@ func main() {
 	// of TTL only on the path that actually uses it; the plain Set/Get
 	// bars are unaffected (see docs/adr/0012-entry-ttl-field-size-cost.md).
 	write(outDir, "ttl-overhead.svg", renderBarChart("TTL overhead: only the TTL path pays (ns/op, lower is better)", "ns/op", []bar{
-		{label: "Get (no TTL)", value: 24.16, highlight: true},
-		{label: "GetWithTTL", value: 28.45},
-		{label: "Set (no TTL)", value: 33.11, highlight: true},
-		{label: "SetWithTTL", value: 41.82},
+		{label: "Get (no TTL)", value: 23.65, highlight: true},
+		{label: "GetWithTTL", value: 27.82},
+		{label: "Set (no TTL)", value: 34.37, highlight: true},
+		{label: "SetWithTTL", value: 41.80},
 	}))
 
 	// Automatic eviction cost — from README.md "Automatic eviction" section
@@ -153,9 +153,9 @@ func main() {
 	// Shows the CLOCK eviction sweep's marginal cost on top of plain Set;
 	// see docs/adr/0016-clock-eviction.md.
 	write(outDir, "eviction-cost.svg", renderBarChart("WithMaxSize eviction cost on Set (ns/op, lower is better)", "ns/op", []bar{
-		{label: "Set (unbounded)", value: 33.11, highlight: true},
-		{label: "SetWithMaxSize (~50% evict)", value: 130.8},
-		{label: "EvictionChurn (always evicts)", value: 174.9},
+		{label: "Set (unbounded)", value: 34.37, highlight: true},
+		{label: "SetWithMaxSize (~50% evict)", value: 76.00},
+		{label: "EvictionChurn (always evicts)", value: 115.0},
 	}))
 
 	// Cross-library comparison — from README.md "Comparison with other Go
@@ -167,7 +167,7 @@ func main() {
 	// single-size scope. Reflects the clean re-run documented in the
 	// README's "these numbers are from a single clean run" note.
 	write(outDir, "compare-set.svg", renderBarChart("Set at n=100,000: goache vs other Go cache libraries (ns/op, lower is better)", "ns/op", []bar{
-		{label: "goache", value: 30.03, highlight: true},
+		{label: "goache", value: 32.63, highlight: true},
 		{label: "go-cache", value: 39.11},
 		{label: "freecache", value: 86.50},
 		{label: "otter", value: 137.6},
@@ -178,7 +178,7 @@ func main() {
 	write(outDir, "compare-parallel-get.svg", renderBarChart("Parallel Get at n=100,000: goache vs other Go cache libraries (ns/op, lower is better)", "ns/op", []bar{
 		{label: "otter", value: 5.980},
 		{label: "theine", value: 6.324},
-		{label: "goache", value: 6.116, highlight: true},
+		{label: "goache", value: 4.578, highlight: true},
 		{label: "ristretto", value: 8.674},
 		{label: "freecache", value: 15.66},
 		{label: "go-cache", value: 36.61},

@@ -3,34 +3,34 @@
 <text x="190" y="24" font-size="16" font-weight="600" fill="#1f2933">goache core operations (ns/op, lower is better)</text>
 <line x1="190" y1="40" x2="190" y2="76" stroke="#cbd5e1" stroke-width="1"/>
 <text x="180" y="63" font-size="13" fill="#1f2933" text-anchor="end">ParallelGet</text>
-<rect x="190" y="44" width="19.5" height="28" rx="3" fill="#2563eb"/>
-<text x="217.5" y="63" font-size="13" fill="#1f2933">5.47 ns/op</text>
+<rect x="190" y="44" width="15.2" height="28" rx="3" fill="#2563eb"/>
+<text x="213.2" y="63" font-size="13" fill="#1f2933">4.54 ns/op</text>
 <line x1="190" y1="82" x2="190" y2="118" stroke="#cbd5e1" stroke-width="1"/>
 <text x="180" y="105" font-size="13" fill="#1f2933" text-anchor="end">ParallelGetSet</text>
-<rect x="190" y="86" width="26.3" height="28" rx="3" fill="#2563eb"/>
-<text x="224.3" y="105" font-size="13" fill="#1f2933">7.37 ns/op</text>
+<rect x="190" y="86" width="21.0" height="28" rx="3" fill="#2563eb"/>
+<text x="219.0" y="105" font-size="13" fill="#1f2933">6.29 ns/op</text>
 <line x1="190" y1="124" x2="190" y2="160" stroke="#cbd5e1" stroke-width="1"/>
 <text x="180" y="147" font-size="13" fill="#1f2933" text-anchor="end">Get</text>
-<rect x="190" y="128" width="86.2" height="28" rx="3" fill="#2563eb"/>
-<text x="284.2" y="147" font-size="13" fill="#1f2933">24.16 ns/op</text>
+<rect x="190" y="128" width="79.2" height="28" rx="3" fill="#2563eb"/>
+<text x="277.2" y="147" font-size="13" fill="#1f2933">23.65 ns/op</text>
 <line x1="190" y1="166" x2="190" y2="202" stroke="#cbd5e1" stroke-width="1"/>
 <text x="180" y="189" font-size="13" fill="#1f2933" text-anchor="end">Set</text>
-<rect x="190" y="170" width="118.1" height="28" rx="3" fill="#2563eb"/>
-<text x="316.1" y="189" font-size="13" fill="#1f2933">33.11 ns/op</text>
+<rect x="190" y="170" width="115.1" height="28" rx="3" fill="#2563eb"/>
+<text x="313.1" y="189" font-size="13" fill="#1f2933">34.37 ns/op</text>
 <line x1="190" y1="208" x2="190" y2="244" stroke="#cbd5e1" stroke-width="1"/>
 <text x="180" y="231" font-size="13" fill="#1f2933" text-anchor="end">Delete</text>
-<rect x="190" y="212" width="137.8" height="28" rx="3" fill="#2563eb"/>
-<text x="335.8" y="231" font-size="13" fill="#1f2933">38.61 ns/op</text>
+<rect x="190" y="212" width="130.6" height="28" rx="3" fill="#2563eb"/>
+<text x="328.6" y="231" font-size="13" fill="#1f2933">38.99 ns/op</text>
 <line x1="190" y1="250" x2="190" y2="286" stroke="#cbd5e1" stroke-width="1"/>
 <text x="180" y="273" font-size="13" fill="#1f2933" text-anchor="end">GetMiss</text>
-<rect x="190" y="254" width="199.8" height="28" rx="3" fill="#2563eb"/>
-<text x="397.8" y="273" font-size="13" fill="#1f2933">56.01 ns/op</text>
+<rect x="190" y="254" width="192.5" height="28" rx="3" fill="#2563eb"/>
+<text x="390.5" y="273" font-size="13" fill="#1f2933">57.47 ns/op</text>
 <line x1="190" y1="292" x2="190" y2="328" stroke="#cbd5e1" stroke-width="1"/>
 <text x="180" y="315" font-size="13" fill="#1f2933" text-anchor="end">DeleteMany</text>
-<rect x="190" y="296" width="246.3" height="28" rx="3" fill="#2563eb"/>
-<text x="444.3" y="315" font-size="13" fill="#1f2933">69.04 ns/op</text>
+<rect x="190" y="296" width="225.6" height="28" rx="3" fill="#2563eb"/>
+<text x="423.6" y="315" font-size="13" fill="#1f2933">67.38 ns/op</text>
 <line x1="190" y1="334" x2="190" y2="370" stroke="#cbd5e1" stroke-width="1"/>
 <text x="180" y="357" font-size="13" fill="#1f2933" text-anchor="end">SetMany</text>
 <rect x="190" y="338" width="360.0" height="28" rx="3" fill="#2563eb"/>
-<text x="558.0" y="357" font-size="13" fill="#1f2933">100.90 ns/op</text>
+<text x="558.0" y="357" font-size="13" fill="#1f2933">107.50 ns/op</text>
 </svg>

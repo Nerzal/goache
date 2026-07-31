@@ -11,7 +11,7 @@ not re-attempted blind.
 | [0001](0001-sharded-lock-striping.md) | Sharded lock-striping over global RWMutex / sync.Map | Accepted |
 | [0002](0002-reject-go-arenas.md) | Reject Go arenas for memory management | Accepted |
 | [0003](0003-generics-api-phase1-scope.md) | Generics API, phase 1 scope (Set/SetMany/Get, no eviction) | Accepted |
-| [0004](0004-shard-storage-pointer-slice.md) | Shard storage: pointer slice, not contiguous value slice | Accepted (after reverting a tried alternative) |
+| [0004](0004-shard-storage-pointer-slice.md) | Shard storage: pointer slice, not contiguous value slice | Superseded by 0018 |
 | [0005](0005-reject-custom-hash-table.md) | Reject custom open-addressed hash table, keep Go's map | Rejected / reverted |
 | [0006](0006-with-capacity-pre-sizing.md) | `WithCapacity` pre-sizing for bulk ingestion | Accepted |
 | [0007](0007-shard-count-default.md) | Default shard count: 256 | Accepted |
@@ -25,6 +25,7 @@ not re-attempted blind.
 | [0015](0015-delete-clear-api.md) | Add Delete / DeleteMany / Clear | Accepted |
 | [0016](0016-clock-eviction.md) | CLOCK (second-chance) eviction via WithMaxSize | Accepted |
 | [0017](0017-size-parametrized-benchmarks.md) | Size-parametrized, feature-parity competitor benchmarks | Accepted |
+| [0018](0018-gemini-analysis-experiments.md) | gemini-analysis.md experiments: padded value-slice shards + gated sync.Pool accepted, 3 others rejected | Accepted |
 
 Adding a new decision: copy the format of an existing record, number it
 sequentially, and add a row here.

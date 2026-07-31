@@ -3,8 +3,8 @@
 <text x="190" y="24" font-size="16" font-weight="600" fill="#1f2933">Set at n=100,000: goache vs other Go cache libraries (ns/op, lower is better)</text>
 <line x1="190" y1="40" x2="190" y2="76" stroke="#cbd5e1" stroke-width="1"/>
 <text x="180" y="63" font-size="13" fill="#1f2933" text-anchor="end">goache</text>
-<rect x="190" y="44" width="37.6" height="28" rx="3" fill="#059669"/>
-<text x="235.6" y="63" font-size="13" fill="#1f2933">30.03 ns/op</text>
+<rect x="190" y="44" width="40.9" height="28" rx="3" fill="#059669"/>
+<text x="238.9" y="63" font-size="13" fill="#1f2933">32.63 ns/op</text>
 <line x1="190" y1="82" x2="190" y2="118" stroke="#cbd5e1" stroke-width="1"/>
 <text x="180" y="105" font-size="13" fill="#1f2933" text-anchor="end">go-cache</text>
 <rect x="190" y="86" width="49.0" height="28" rx="3" fill="#2563eb"/>

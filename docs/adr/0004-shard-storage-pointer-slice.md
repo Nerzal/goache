@@ -2,7 +2,19 @@
 
 ## Status
 
-Accepted (after reverting a tried alternative)
+**Superseded by [ADR 0018](0018-gemini-analysis-experiments.md).** A later
+experiment revisited the "cache-line padding" fix this ADR's Consequences
+section considered and dismissed as "not worth the fragility for a benefit
+this small" — a plain fixed-size byte-array pad field turned out not to
+need `unsafe` or any assumption about `sync.RWMutex`'s layout, and the
+benefit was ~17-21% faster on `BenchmarkParallelGet`/`BenchmarkParallelGetSet`,
+not small. `Cache.shards` is now `[]shard[K, V]` with each `shard` padded to
+a cache line; this ADR's measurement and reasoning are kept below as the
+historical record of why the *unpadded* value slice was rejected — that
+part of the analysis still holds, it's the padding option that changed the
+conclusion.
+
+Original status: Accepted (after reverting a tried alternative)
 
 ## Context
 
