@@ -61,11 +61,55 @@
 // any background goroutine, timer, or ticker of its own. See
 // docs/adr/0011-lazy-ttl-no-background-janitor.md for why an internal
 // auto-janitor was considered and rejected.
+//
+// # Automatic eviction (bounded cache size)
+//
+// WithMaxSize(n) bounds the cache to roughly n total entries (split evenly
+// across shards) and turns on per-shard eviction: when a shard is full,
+// inserting a new key evicts an existing one first. The policy is CLOCK
+// (a second-chance approximation of LRU), chosen deliberately over two
+// alternatives:
+//
+//   - True LRU (move-to-front on every access) would require Get to take a
+//     write lock to update recency on every hit, defeating the sharding
+//     design's whole point of letting concurrent readers proceed without
+//     blocking each other. Rejected for that reason alone.
+//   - W-TinyLFU-style frequency-sketch admission (what theine-go and
+//     otter/v2 use, see docs/competitor-analysis.md) gives a better hit
+//     ratio under skewed/Zipf workloads, but costs real CPU on every Set
+//     (updating a frequency estimate, comparing admission candidates) —
+//     exactly the bookkeeping goache's Set currently beats those libraries
+//     on. Rejected to keep Set's cost close to its current numbers; may be
+//     revisited later if hit-ratio-under-skew becomes a measured problem.
+//
+// CLOCK keeps Get's cost close to zero: each entry carries a single atomic
+// "referenced" bit, set by Get with a plain atomic store — no write lock,
+// no ring-structure mutation, just one bit flip safe under concurrent
+// readers. Eviction (which does need the write lock, since it mutates the
+// shard's map and ring) starts at a per-shard "hand" pointer and walks
+// forward, clearing the referenced bit on anything it finds set and
+// evicting the first entry it finds already clear — approximating "evict
+// what hasn't been touched since we last passed by" without ever taking a
+// write lock on the read path.
+//
+// This does cost something even when WithMaxSize isn't used: to let Get
+// flip that bit without a write lock, entries must be individually
+// addressable, heap-allocated objects rather than plain values inlined in
+// the map — so shards store map[K]*entry[K, V] instead of the pre-eviction
+// map[K]entry[V]. That means every *new* key (not overwrites of existing
+// keys) now costs one heap allocation, whether or not WithMaxSize is ever
+// called. This is a real, deliberate trade-off, not an oversight — see
+// docs/adr/0016-clock-eviction.md for the full reasoning and the measured
+// cost. Ring-maintenance work (linking/unlinking entries, the eviction
+// sweep itself) is skipped entirely when a shard has no configured limit,
+// so non-eviction users pay the one allocation per new key but no extra
+// CPU beyond that.
 package goache
 
 import (
 	"hash/maphash"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -74,32 +118,140 @@ import (
 // instead of a modulo.
 const defaultShardCount = 256
 
-// entry is the value stored per key inside a shard.
+// entry is the value stored per key inside a shard. It's heap-allocated and
+// referenced by pointer from shard.data (rather than stored inline as a
+// plain value) specifically so Get can flip referenced under only a read
+// lock — see the package doc comment's "Automatic eviction" section.
 //
 // expiresAt is an absolute deadline in UnixNano, or 0 for "never expires".
 // 0 is a safe sentinel: it's Set's zero value (entries created via Set/
 // SetMany without a TTL never pay any expiry-check cost beyond one int64
 // comparison against 0 in Get), and no real deadline is ever exactly the
-// Unix epoch. Storing an absolute int64 deadline (rather than e.g. a
-// *time.Timer per entry) keeps entry the same size as before plus 8 bytes,
-// with no allocation and no per-entry background work — expiry is checked
-// lazily on Get, and reclaimed either lazily (an expired entry is simply
-// never returned) or actively via Purge.
-type entry[V any] struct {
-	value     V
-	expiresAt int64
+// Unix epoch.
+//
+// referenced, prev, and next only matter to shards with a configured
+// WithMaxSize limit: referenced is set by Get (atomically, no write lock)
+// and cleared/read by the eviction sweep; prev/next thread the entry into
+// its shard's circular CLOCK ring and are only ever mutated under the
+// shard's write lock. Shards with no limit configured never touch them —
+// left at their zero values (false, nil, nil) forever.
+type entry[K comparable, V any] struct {
+	key        K
+	value      V
+	expiresAt  int64
+	referenced atomic.Bool
+	prev, next *entry[K, V]
 }
 
 // expired reports whether the entry's TTL (if any) has passed as of now
 // (UnixNano). An entry with expiresAt == 0 never expires.
-func (e *entry[V]) expired(now int64) bool {
+func (e *entry[K, V]) expired(now int64) bool {
 	return e.expiresAt != 0 && now >= e.expiresAt
 }
 
 // shard is one independently-locked partition of the cache.
+//
+// hand and limit only matter when limit > 0 (a WithMaxSize was configured):
+// hand is the shard's CLOCK hand — the next candidate eviction considers —
+// and limit is this shard's share of the configured maximum size. limit == 0
+// (the default) means unbounded: no ring is maintained, no eviction ever
+// runs, matching the zero-value convention used by WithCapacity/TTL
+// elsewhere in this package.
 type shard[K comparable, V any] struct {
-	mu   sync.RWMutex
-	data map[K]entry[V]
+	mu    sync.RWMutex
+	data  map[K]*entry[K, V]
+	hand  *entry[K, V]
+	limit int
+}
+
+// set stores key/value (with the given absolute expiresAt deadline, 0 for
+// none) in the shard, evicting one entry first if the shard has a
+// configured limit and is already full. Caller must hold s.mu (write lock).
+func (s *shard[K, V]) set(key K, value V, expiresAt int64) {
+	if e, ok := s.data[key]; ok {
+		e.value = value
+		e.expiresAt = expiresAt
+		if s.limit > 0 {
+			e.referenced.Store(true)
+		}
+		return
+	}
+
+	if s.limit > 0 && len(s.data) >= s.limit {
+		s.evict()
+	}
+
+	e := &entry[K, V]{key: key, value: value, expiresAt: expiresAt}
+	s.data[key] = e
+	if s.limit > 0 {
+		s.linkNew(e)
+	}
+}
+
+// linkNew inserts a freshly-created entry into the shard's circular CLOCK
+// ring, just behind the hand (so it's the last entry the hand will revisit).
+// Caller must hold s.mu and s.limit must be > 0.
+func (s *shard[K, V]) linkNew(e *entry[K, V]) {
+	if s.hand == nil {
+		e.prev, e.next = e, e
+		s.hand = e
+		return
+	}
+	last := s.hand.prev
+	last.next = e
+	e.prev = last
+	e.next = s.hand
+	s.hand.prev = e
+}
+
+// removeFromRing unlinks e from its neighbors in the CLOCK ring, without
+// touching s.hand — callers are responsible for fixing up s.hand themselves
+// since the correct replacement differs between an eviction sweep (which
+// already knows the next hand position) and an explicit delete (which
+// doesn't). A no-op if e is the ring's sole entry (e.next == e); the caller
+// must detect that case and reset s.hand to nil itself.
+func (s *shard[K, V]) removeFromRing(e *entry[K, V]) {
+	if e.next == e {
+		return
+	}
+	e.prev.next = e.next
+	e.next.prev = e.prev
+}
+
+// evict removes exactly one entry via CLOCK: starting at the hand, skip
+// (clearing as it goes) any entry marked referenced, and remove the first
+// one that isn't. Caller must hold s.mu (write lock); s.limit must be > 0
+// and the shard must be non-empty (s.hand != nil).
+func (s *shard[K, V]) evict() {
+	e := s.hand
+	for e.referenced.Load() {
+		e.referenced.Store(false)
+		e = e.next
+	}
+
+	next := e.next
+	if next == e {
+		next = nil
+	}
+	s.removeFromRing(e)
+	delete(s.data, e.key)
+	s.hand = next
+	e.prev, e.next = nil, nil
+}
+
+// deleteEntry unlinks e (already removed from s.data by the caller) from
+// the CLOCK ring, fixing up s.hand if it pointed at e. Caller must hold
+// s.mu and s.limit must be > 0.
+func (s *shard[K, V]) deleteEntry(e *entry[K, V]) {
+	if s.hand == e {
+		if e.next == e {
+			s.hand = nil
+		} else {
+			s.hand = e.next
+		}
+	}
+	s.removeFromRing(e)
+	e.prev, e.next = nil, nil
 }
 
 // Entry is a key/value pair used for bulk operations. TTL is optional: zero
@@ -133,6 +285,7 @@ type Option func(*config)
 type config struct {
 	shardCount int
 	capacity   int
+	maxSize    int
 }
 
 // WithShardCount sets the number of shards the cache is split into. The
@@ -157,6 +310,18 @@ func WithCapacity(n int) Option {
 	}
 }
 
+// WithMaxSize bounds the cache to roughly n total entries (split evenly
+// across shards) by evicting entries via CLOCK (a second-chance
+// approximation of LRU) once a shard is full — see the package doc
+// comment's "Automatic eviction" section for why CLOCK was chosen over true
+// LRU or W-TinyLFU-style admission. Ignored if n <= 0 (the default: no
+// limit, no eviction), same convention as WithCapacity.
+func WithMaxSize(n int) Option {
+	return func(c *config) {
+		c.maxSize = n
+	}
+}
+
 // New creates an empty Cache.
 func New[K comparable, V any](opts ...Option) *Cache[K, V] {
 	cfg := config{shardCount: defaultShardCount}
@@ -173,9 +338,14 @@ func New[K comparable, V any](opts ...Option) *Cache[K, V] {
 		perShard = (cfg.capacity + n - 1) / n
 	}
 
+	shardLimit := 0
+	if cfg.maxSize > 0 {
+		shardLimit = max((cfg.maxSize+n-1)/n, 1)
+	}
+
 	shards := make([]*shard[K, V], n)
 	for i := range shards {
-		shards[i] = &shard[K, V]{data: make(map[K]entry[V], perShard)}
+		shards[i] = &shard[K, V]{data: make(map[K]*entry[K, V], perShard), limit: shardLimit}
 	}
 
 	return &Cache[K, V]{
@@ -203,7 +373,7 @@ func (c *Cache[K, V]) shardFor(key K) *shard[K, V] {
 func (c *Cache[K, V]) Set(key K, value V) {
 	s := c.shardFor(key)
 	s.mu.Lock()
-	s.data[key] = entry[V]{value: value}
+	s.set(key, value, 0)
 	s.mu.Unlock()
 }
 
@@ -217,7 +387,7 @@ func (c *Cache[K, V]) SetWithTTL(key K, value V, ttl time.Duration) {
 	}
 	s := c.shardFor(key)
 	s.mu.Lock()
-	s.data[key] = entry[V]{value: value, expiresAt: expiresAt}
+	s.set(key, value, expiresAt)
 	s.mu.Unlock()
 }
 
@@ -255,7 +425,7 @@ func (c *Cache[K, V]) SetMany(entries []Entry[K, V]) {
 				}
 				expiresAt = now.Add(e.TTL).UnixNano()
 			}
-			s.data[e.Key] = entry[V]{value: e.Value, expiresAt: expiresAt}
+			s.set(e.Key, e.Value, expiresAt)
 		}
 		s.mu.Unlock()
 	}
@@ -266,20 +436,92 @@ func (c *Cache[K, V]) SetMany(entries []Entry[K, V]) {
 // see Purge for active reclamation. The clock is only read when the found
 // entry actually has a TTL (expiresAt != 0), so looking up entries created
 // via Set/SetMany without a TTL costs exactly what it did before TTL
-// support existed.
+// support existed. When the cache has a configured WithMaxSize limit, a hit
+// also flips the entry's CLOCK "referenced" bit via a single atomic store —
+// no write lock is taken to do this, so concurrent Get calls never block
+// each other.
 func (c *Cache[K, V]) Get(key K) (V, bool) {
 	s := c.shardFor(key)
 	s.mu.RLock()
 	e, ok := s.data[key]
-	s.mu.RUnlock()
 	if !ok {
-		return e.value, false
-	}
-	if e.expiresAt != 0 && time.Now().UnixNano() >= e.expiresAt {
+		s.mu.RUnlock()
 		var zero V
 		return zero, false
 	}
-	return e.value, true
+	if e.expiresAt != 0 && time.Now().UnixNano() >= e.expiresAt {
+		s.mu.RUnlock()
+		var zero V
+		return zero, false
+	}
+	if s.limit > 0 {
+		e.referenced.Store(true)
+	}
+	v := e.value
+	s.mu.RUnlock()
+	return v, true
+}
+
+// Delete removes key from the cache, if present. Deleting a key that isn't
+// present is a no-op.
+func (c *Cache[K, V]) Delete(key K) {
+	s := c.shardFor(key)
+	s.mu.Lock()
+	if e, ok := s.data[key]; ok {
+		delete(s.data, key)
+		if s.limit > 0 {
+			s.deleteEntry(e)
+		}
+	}
+	s.mu.Unlock()
+}
+
+// DeleteMany removes 1..N keys. Keys are grouped by destination shard up
+// front so each shard's lock is acquired at most once, instead of once per
+// key — same pattern as SetMany. Keys not present are silently skipped.
+func (c *Cache[K, V]) DeleteMany(keys []K) {
+	if len(keys) == 0 {
+		return
+	}
+
+	buckets := make([][]K, len(c.shards))
+	for _, k := range keys {
+		idx := maphash.Comparable(c.seed, k) & c.mask
+		buckets[idx] = append(buckets[idx], k)
+	}
+
+	for i, bucket := range buckets {
+		if len(bucket) == 0 {
+			continue
+		}
+		s := c.shards[i]
+		s.mu.Lock()
+		for _, k := range bucket {
+			if e, ok := s.data[k]; ok {
+				delete(s.data, k)
+				if s.limit > 0 {
+					s.deleteEntry(e)
+				}
+			}
+		}
+		s.mu.Unlock()
+	}
+}
+
+// Clear removes every entry from the cache, across all shards. Each shard's
+// underlying map storage is retained (via the built-in clear) rather than
+// replaced, so a Clear followed by refilling the cache to roughly its
+// previous size doesn't pay for map growth again. Any CLOCK ring a shard
+// was maintaining is discarded along with it (its entries are only
+// reachable from each other after this, and Go's tracing GC collects that
+// cycle normally once nothing outside references it).
+func (c *Cache[K, V]) Clear() {
+	for _, s := range c.shards {
+		s.mu.Lock()
+		clear(s.data)
+		s.hand = nil
+		s.mu.Unlock()
+	}
 }
 
 // Len returns the number of items physically stored in the cache. This
@@ -313,6 +555,9 @@ func (c *Cache[K, V]) Purge() int {
 		for k, e := range s.data {
 			if e.expired(now) {
 				delete(s.data, k)
+				if s.limit > 0 {
+					s.deleteEntry(e)
+				}
 				removed++
 			}
 		}

@@ -21,6 +21,10 @@ not re-attempted blind.
 | [0011](0011-lazy-ttl-no-background-janitor.md) | Lazy TTL enforcement, no background janitor goroutine | Accepted |
 | [0012](0012-entry-ttl-field-size-cost.md) | entry struct grows 8 bytes for TTL — accepted, isolated to creation-time cost | Accepted |
 | [0013](0013-ttl-api-shape.md) | TTL API shape — SetWithTTL + Entry.TTL, Set left untouched | Accepted |
+| [0014](0014-add-theine-otter-to-comparison.md) | Add theine-go and otter/v2 to the competitor comparison | Accepted |
+| [0015](0015-delete-clear-api.md) | Add Delete / DeleteMany / Clear | Accepted |
+| [0016](0016-clock-eviction.md) | CLOCK (second-chance) eviction via WithMaxSize | Accepted |
+| [0017](0017-size-parametrized-benchmarks.md) | Size-parametrized, feature-parity competitor benchmarks | Accepted |
 
 Adding a new decision: copy the format of an existing record, number it
 sequentially, and add a row here.
