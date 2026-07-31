@@ -1,6 +1,6 @@
 # Go cache library competitor analysis
 
-Findings from a deep dive into the two sources linked in `fooo.md`:
+Findings from a deep dive into two sources
 
 1. [Yiling-J/theine-go](https://github.com/Yiling-J/theine-go) (README)
 2. [otter's "Cache evolution" blog post](https://maypok86.github.io/otter/blog/cache-evolution/)

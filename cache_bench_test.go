@@ -232,6 +232,30 @@ func BenchmarkDeleteMany(b *testing.B) {
 	}
 }
 
+// BenchmarkDeleteSetChurn measures the delete-then-reinsert cycle on an
+// unbounded cache — the workload behind bench/'s cross-library Delete
+// comparison. Every reinsert is a brand-new key from the map's perspective,
+// so before the per-shard freelist (docs/performance-analysis.md T1) each
+// iteration paid one heap allocation for a fresh entry; the freelist lets
+// the entry parked by Delete be reused instead.
+func BenchmarkDeleteSetChurn(b *testing.B) {
+	c := New[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		k := keys[i%n]
+		c.Delete(k)
+		c.Set(k, i)
+		i++
+	}
+}
+
 // BenchmarkClear measures populate-then-Clear together, not Clear in
 // isolation: the builtin clear() used internally is fast enough (unlike
 // Purge's per-key loop) that isolating it via b.StopTimer()/b.StartTimer()

@@ -26,6 +26,9 @@ not re-attempted blind.
 | [0016](0016-clock-eviction.md) | CLOCK (second-chance) eviction via WithMaxSize | Accepted |
 | [0017](0017-size-parametrized-benchmarks.md) | Size-parametrized, feature-parity competitor benchmarks | Accepted |
 | [0018](0018-gemini-analysis-experiments.md) | gemini-analysis.md experiments: padded value-slice shards + gated sync.Pool accepted, 3 others rejected | Accepted |
+| [0019](0019-single-slot-freelist.md) | Per-shard single-slot entry freelist for unbounded shards (T1) | Accepted |
+| [0020](0020-shard-count-does-not-scale-eviction.md) | Shard count does not scale bounded eviction (T2); WithMaxSize made a hard bound | Rejected (T2) / Accepted (capacity fix) |
+| [0021](0021-reject-inline-storage-unbounded.md) | Reject inline entry storage for unbounded caches (T3) — 20% concurrent mixed read/write regression | Rejected / reverted |
 
 Adding a new decision: copy the format of an existing record, number it
 sequentially, and add a row here.

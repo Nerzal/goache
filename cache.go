@@ -78,9 +78,14 @@
 //
 // # Automatic eviction (bounded cache size)
 //
-// WithMaxSize(n) bounds the cache to roughly n total entries (split evenly
-// across shards) and turns on per-shard eviction: when a shard is full,
-// inserting a new key evicts an existing one first. The policy is CLOCK
+// WithMaxSize(n) bounds the cache to at most n total entries and turns on
+// per-shard eviction: when a shard is full, inserting a new key evicts an
+// existing one first. The budget is split so the per-shard limits sum to
+// exactly n (the first n%shardCount shards get one extra slot), making n a
+// hard ceiling on Len rather than an approximation; when n is below the
+// shard count, the shard count is lowered to the largest power of two <= n
+// so every shard still gets at least one slot. See
+// docs/adr/0020-shard-count-does-not-scale-eviction.md. The policy is CLOCK
 // (a second-chance approximation of LRU), chosen deliberately over two
 // alternatives:
 //
@@ -118,6 +123,19 @@
 // sweep itself) is skipped entirely when a shard has no configured limit,
 // so non-eviction users pay the one allocation per new key but no extra
 // CPU beyond that.
+//
+// The obvious fix — give unbounded shards their own inline map[K]entry
+// storage and keep pointers only for WithMaxSize shards — was implemented
+// in full and reverted. It delivered exactly the wins it promised on
+// allocation count and full-map sweeps (Purge -51%, Clear -25% and 100,000
+// fewer allocs/op, SetMany/Delete -17%), but cost 20% of concurrent mixed
+// read/write throughput (BenchmarkParallelGetSet): storing values inline
+// makes an overwrite a mapassign *into the bucket array concurrent readers
+// are probing*, where pointer storage writes through the pointer and leaves
+// the buckets clean. The predicted single-threaded Get win never appeared
+// either. See docs/adr/0021-reject-inline-storage-unbounded.md — the
+// allocation wins are real and will keep looking tempting in a profile, so
+// don't re-attempt this without first solving that co-location problem.
 //
 // Shards with a configured WithMaxSize limit recycle entries through a
 // sync.Pool: every eviction and every Delete/DeleteMany/Clear/Purge removal
@@ -188,6 +206,18 @@ type shard[K comparable, V any] struct {
 	data  map[K]*entry[K, V]
 	hand  *entry[K, V]
 	limit int
+	// free is a one-entry freelist for unbounded shards (limit == 0):
+	// Delete/DeleteMany park the removed entry here (a single pointer
+	// store — no zeroing, since set overwrites key/value/expiresAt on
+	// reuse anyway, and unbounded shards never touch referenced/prev/next)
+	// and set takes it back for the next brand-new key, turning the
+	// delete-then-reinsert churn workload from one heap allocation per
+	// cycle into zero. Bounded shards don't use it — their eviction path
+	// already recycles through Cache.entryPool. At most one entry per
+	// shard (256 by default) is retained this way, keeping its last
+	// key/value alive until reuse — a deliberately bounded, negligible
+	// cost. Only ever touched under mu's write lock.
+	free *entry[K, V]
 	// _ pads the shard out so adjacent shards in Cache.shards don't share a
 	// cache line — see the package doc comment's shard-storage paragraph.
 	_ [64]byte
@@ -207,12 +237,16 @@ func (s *shard[K, V]) set(key K, value V, expiresAt int64, pool *sync.Pool) {
 	}
 
 	var e *entry[K, V]
-	if s.limit > 0 {
+	switch {
+	case s.limit > 0:
 		if len(s.data) >= s.limit {
 			s.evict(pool)
 		}
 		e, _ = pool.Get().(*entry[K, V])
-	} else {
+	case s.free != nil:
+		e = s.free
+		s.free = nil
+	default:
 		e = &entry[K, V]{}
 	}
 	e.key = key
@@ -345,6 +379,12 @@ type config struct {
 // value is rounded up to the next power of two. More shards reduce lock
 // contention under high concurrency at the cost of a small amount of
 // per-shard memory overhead. The default is 256.
+//
+// Raising this is not a way to make a WithMaxSize-bounded cache evict
+// faster — measured across 1,000 to 1,000,000 entries, more shards left
+// eviction cost flat at best and up to 25% worse at large sizes (see
+// docs/adr/0020-shard-count-does-not-scale-eviction.md). It is also capped
+// at maxSize when WithMaxSize is smaller — see WithMaxSize.
 func WithShardCount(n int) Option {
 	return func(c *config) {
 		c.shardCount = n
@@ -363,12 +403,23 @@ func WithCapacity(n int) Option {
 	}
 }
 
-// WithMaxSize bounds the cache to roughly n total entries (split evenly
-// across shards) by evicting entries via CLOCK (a second-chance
-// approximation of LRU) once a shard is full — see the package doc
-// comment's "Automatic eviction" section for why CLOCK was chosen over true
-// LRU or W-TinyLFU-style admission. Ignored if n <= 0 (the default: no
-// limit, no eviction), same convention as WithCapacity.
+// WithMaxSize bounds the cache to at most n total entries by evicting via
+// CLOCK (a second-chance approximation of LRU) once a shard is full — see
+// the package doc comment's "Automatic eviction" section for why CLOCK was
+// chosen over true LRU or W-TinyLFU-style admission. Ignored if n <= 0 (the
+// default: no limit, no eviction), same convention as WithCapacity.
+//
+// n is a hard upper bound, not an approximation: the budget is split across
+// shards so the per-shard limits sum to exactly n, and Len never exceeds it.
+// Because keys are distributed by hash rather than perfectly evenly, a
+// shard can reach its own share and start evicting while others still have
+// room, so a cache under churn typically settles somewhat below n — n
+// bounds memory, it doesn't reserve it.
+//
+// If n is smaller than the configured shard count, the shard count is
+// lowered to the largest power of two <= n (every shard needs at least one
+// slot). A cache that small doesn't need many shards to avoid contention,
+// so this costs nothing in practice.
 func WithMaxSize(n int) Option {
 	return func(c *config) {
 		c.maxSize = n
@@ -386,20 +437,39 @@ func New[K comparable, V any](opts ...Option) *Cache[K, V] {
 	}
 	n := nextPowerOfTwo(cfg.shardCount)
 
+	// A bounded cache can't spread its budget over more shards than it has
+	// entries to give them: every shard needs a limit of at least 1 (a limit
+	// of 0 means "unbounded" by this package's convention), so a shard count
+	// above maxSize would make the cache's real capacity shardCount rather
+	// than maxSize. Cap the shard count at the largest power of two <=
+	// maxSize so that can't happen.
+	if cfg.maxSize > 0 && n > cfg.maxSize {
+		n = previousPowerOfTwo(cfg.maxSize)
+	}
+
 	perShard := 0
 	if cfg.capacity > 0 {
 		perShard = (cfg.capacity + n - 1) / n
 	}
 
-	shardLimit := 0
-	if cfg.maxSize > 0 {
-		shardLimit = max((cfg.maxSize+n-1)/n, 1)
-	}
-
 	shards := make([]shard[K, V], n)
 	for i := range shards {
 		shards[i].data = make(map[K]*entry[K, V], perShard)
-		shards[i].limit = shardLimit
+	}
+
+	if cfg.maxSize > 0 {
+		// Split maxSize across shards so the per-shard limits sum to
+		// exactly maxSize: every shard gets maxSize/n, and the first
+		// maxSize%n shards get one extra slot to absorb the remainder.
+		// Rounding every shard up instead (the obvious ceil) would let the
+		// cache hold up to n-1 entries more than asked for.
+		base, rem := cfg.maxSize/n, cfg.maxSize%n
+		for i := range shards {
+			shards[i].limit = base
+			if i < rem {
+				shards[i].limit++
+			}
+		}
 	}
 
 	c := &Cache[K, V]{
@@ -414,6 +484,15 @@ func New[K comparable, V any](opts ...Option) *Cache[K, V] {
 func nextPowerOfTwo(n int) int {
 	p := 1
 	for p < n {
+		p <<= 1
+	}
+	return p
+}
+
+// previousPowerOfTwo returns the largest power of two <= n. n must be >= 1.
+func previousPowerOfTwo(n int) int {
+	p := 1
+	for p<<1 <= n {
 		p <<= 1
 	}
 	return p
@@ -499,6 +578,7 @@ func (c *Cache[K, V]) SetMany(entries []Entry[K, V]) {
 func (c *Cache[K, V]) Get(key K) (V, bool) {
 	s := c.shardFor(key)
 	s.mu.RLock()
+
 	e, ok := s.data[key]
 	if !ok {
 		s.mu.RUnlock()
@@ -527,6 +607,8 @@ func (c *Cache[K, V]) Delete(key K) {
 		delete(s.data, key)
 		if s.limit > 0 {
 			s.deleteEntry(e, &c.entryPool)
+		} else {
+			s.free = e
 		}
 	}
 	s.mu.Unlock()
@@ -557,6 +639,8 @@ func (c *Cache[K, V]) DeleteMany(keys []K) {
 				delete(s.data, k)
 				if s.limit > 0 {
 					s.deleteEntry(e, &c.entryPool)
+				} else {
+					s.free = e
 				}
 			}
 		}

@@ -360,6 +360,107 @@ func TestDelete(t *testing.T) {
 	}
 }
 
+// TestDeleteParksEntryForReuse pins the T1 freelist behavior
+// (docs/adr/0019-single-slot-freelist.md): on an unbounded shard, Delete
+// parks the removed entry in the shard's one-slot freelist and the next
+// brand-new-key set reuses that exact allocation instead of making a fresh
+// one — and a reused entry must not leak any state (TTL, value) from its
+// previous life.
+func TestDeleteParksEntryForReuse(t *testing.T) {
+	c := New[string, int](WithShardCount(1)) // single shard: park/reuse observable
+	s := &c.shards[0]
+
+	c.SetWithTTL("old", 1, time.Hour)
+	old := s.data["old"]
+	c.Delete("old")
+	if s.free != old {
+		t.Fatalf("shard.free after Delete = %p; want the deleted entry %p", s.free, old)
+	}
+
+	c.Set("new", 2)
+	if s.free != nil {
+		t.Fatalf("shard.free after reuse = %p; want nil", s.free)
+	}
+	if got := s.data["new"]; got != old {
+		t.Fatalf("new key's entry = %p; want reused parked entry %p", got, old)
+	}
+	// The reused entry carried a TTL in its previous life — plain Set must
+	// have cleared it (expiresAt = 0), so this Get can never miss.
+	if e := s.data["new"]; e.expiresAt != 0 {
+		t.Fatalf("reused entry expiresAt = %d; want 0 (no inherited TTL)", e.expiresAt)
+	}
+	if v, ok := c.Get("new"); !ok || v != 2 {
+		t.Fatalf("Get(new) = %d, %v; want 2, true", v, ok)
+	}
+
+	// Overwriting an existing key must NOT consume the freelist.
+	c.Delete("new") // parks again
+	parked := s.free
+	c.Set("other", 3) // takes the parked entry
+	c.Set("other", 4) // overwrite in place — no allocation, no freelist use
+	if s.free != nil || parked == nil {
+		t.Fatalf("freelist state after overwrite: free=%p parked=%p; want free consumed exactly once", s.free, parked)
+	}
+
+	// Bounded shards must never use the freelist (they recycle via the
+	// entry pool instead — see deleteEntry).
+	cb := New[string, int](WithShardCount(1), WithMaxSize(8))
+	sb := &cb.shards[0]
+	cb.Set("x", 1)
+	cb.Delete("x")
+	if sb.free != nil {
+		t.Fatalf("bounded shard.free after Delete = %p; want nil (pool path)", sb.free)
+	}
+}
+
+// TestWithMaxSizeIsAHardUpperBound pins that the configured maximum is a
+// real ceiling, not an approximation rounded up per shard. Before
+// docs/adr/0020, per-shard limits were ceil(maxSize/shardCount) with a
+// floor of 1, so a cache could hold up to shardCount-1 entries more than
+// asked for — and any maxSize below the shard count degenerated into
+// "capacity == shardCount" (e.g. WithMaxSize(100) on the default 256 shards
+// held 256).
+func TestWithMaxSizeIsAHardUpperBound(t *testing.T) {
+	for _, maxSize := range []int{1, 7, 100, 500, 1000, 12345} {
+		c := New[int, int](WithMaxSize(maxSize))
+
+		total := 0
+		for i := range c.shards {
+			if c.shards[i].limit < 1 {
+				t.Fatalf("maxSize=%d: shard %d has limit %d; want >= 1",
+					maxSize, i, c.shards[i].limit)
+			}
+			total += c.shards[i].limit
+		}
+		if total != maxSize {
+			t.Fatalf("maxSize=%d: shard limits sum to %d; want exactly %d",
+				maxSize, total, maxSize)
+		}
+
+		for i := range maxSize * 20 {
+			c.Set(i, i)
+		}
+		if got := c.Len(); got > maxSize {
+			t.Fatalf("maxSize=%d: Len() = %d; want <= %d", maxSize, got, maxSize)
+		}
+	}
+}
+
+// TestWithMaxSizeCapsShardCount covers the shard-count reduction that keeps
+// the bound honest when maxSize is smaller than the requested shard count.
+func TestWithMaxSizeCapsShardCount(t *testing.T) {
+	c := New[int, int](WithMaxSize(100), WithShardCount(4096))
+	if got := len(c.shards); got != 64 {
+		t.Fatalf("shard count = %d; want 64 (largest power of two <= 100)", got)
+	}
+
+	// A shard count at or below maxSize is left alone.
+	c = New[int, int](WithMaxSize(1000), WithShardCount(256))
+	if got := len(c.shards); got != 256 {
+		t.Fatalf("shard count = %d; want 256 (unchanged, 256 <= 1000)", got)
+	}
+}
+
 func TestDeleteMany(t *testing.T) {
 	c := New[int, string]()
 
