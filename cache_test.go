@@ -166,6 +166,88 @@ func TestConcurrentDeleteAndSet(t *testing.T) {
 	wg.Wait()
 }
 
+// TestConcurrentBulkOps hammers SetMany/DeleteMany from many goroutines at
+// once. Those two share per-Cache scratch-space pools
+// (docs/adr/0022-bulk-bucket-pooling.md), so a bucket set leaking between
+// concurrent callers would corrupt which keys land in which shard — run
+// under -race, where that shows up as a data race, and verified here by
+// every goroutine's own keys surviving.
+func TestConcurrentBulkOps(t *testing.T) {
+	c := New[int, int](WithShardCount(16))
+	const goroutines = 16
+	const perGoroutine = 500
+
+	var wg sync.WaitGroup
+	for g := range goroutines {
+		wg.Go(func() {
+			entries := make([]Entry[int, int], perGoroutine)
+			keys := make([]int, perGoroutine)
+			for i := range perGoroutine {
+				key := g*perGoroutine + i
+				entries[i] = Entry[int, int]{Key: key, Value: key * 2}
+				keys[i] = key
+			}
+			for range 20 {
+				c.SetMany(entries)
+				c.DeleteMany(keys)
+				c.SetMany(entries)
+			}
+		})
+	}
+	wg.Wait()
+
+	// Every goroutine's last operation was a SetMany, so all keys must be
+	// present with the right value and routed to the right shard.
+	for g := range goroutines {
+		for i := range perGoroutine {
+			key := g*perGoroutine + i
+			v, ok := c.Get(key)
+			if !ok || v != key*2 {
+				t.Fatalf("Get(%d) = %d, %v; want %d, true", key, v, ok, key*2)
+			}
+		}
+	}
+	if got, want := c.Len(), goroutines*perGoroutine; got != want {
+		t.Fatalf("Len() = %d; want %d", got, want)
+	}
+}
+
+// TestBulkBucketsResetBetweenCalls pins that pooled scratch space carries
+// nothing into the next call: a second, smaller SetMany must not re-apply
+// the first call's entries, and DeleteMany must not re-delete stale keys.
+func TestBulkBucketsResetBetweenCalls(t *testing.T) {
+	c := New[string, int](WithShardCount(4))
+
+	c.SetMany([]Entry[string, int]{
+		{Key: "a", Value: 1},
+		{Key: "b", Value: 2},
+		{Key: "c", Value: 3},
+	})
+	c.DeleteMany([]string{"a", "b", "c"})
+	if got := c.Len(); got != 0 {
+		t.Fatalf("Len() after deleting everything = %d; want 0", got)
+	}
+
+	// A single-entry call reusing the pooled buckets must set exactly one key.
+	c.SetMany([]Entry[string, int]{{Key: "d", Value: 4}})
+	if got := c.Len(); got != 1 {
+		t.Fatalf("Len() after one-entry SetMany = %d; want 1 (stale buckets replayed?)", got)
+	}
+	if v, ok := c.Get("d"); !ok || v != 4 {
+		t.Fatalf("Get(d) = %d, %v; want 4, true", v, ok)
+	}
+
+	// A single-key DeleteMany must not remove anything else.
+	c.Set("e", 5)
+	c.DeleteMany([]string{"d"})
+	if v, ok := c.Get("e"); !ok || v != 5 {
+		t.Fatalf("Get(e) after unrelated DeleteMany = %d, %v; want 5, true", v, ok)
+	}
+	if got := c.Len(); got != 1 {
+		t.Fatalf("Len() = %d; want 1", got)
+	}
+}
+
 func TestConcurrentMixedReadWrite(t *testing.T) {
 	c := New[int, int](WithShardCount(16))
 	const key = 42

@@ -45,6 +45,42 @@ func BenchmarkSetMany(b *testing.B) {
 	}
 }
 
+// BenchmarkSetManyRepeated / BenchmarkDeleteManyRepeated measure repeated
+// bulk calls against one long-lived cache — the shape a server actually
+// runs, and the one a per-Cache bucket pool can help (see
+// docs/performance-analysis.md T4). BenchmarkSetMany above deliberately
+// builds a fresh Cache per batch to measure cold ingestion, so it can never
+// show reuse; these two complete the picture.
+
+func BenchmarkSetManyRepeated(b *testing.B) {
+	const batch = 100
+	c := New[string, int]()
+	entries := make([]Entry[string, int], batch)
+	for j := range entries {
+		entries[j] = Entry[string, int]{Key: strconv.Itoa(j), Value: j}
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		c.SetMany(entries)
+	}
+}
+
+func BenchmarkDeleteManyRepeated(b *testing.B) {
+	const batch = 100
+	c := New[string, int]()
+	keys := make([]string, batch)
+	for j := range keys {
+		keys[j] = strconv.Itoa(j)
+		c.Set(keys[j], j)
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		c.DeleteMany(keys)
+	}
+}
+
 func BenchmarkGet(b *testing.B) {
 	c := New[string, int]()
 	const n = 100000
@@ -389,6 +425,116 @@ func BenchmarkParallelGetWithMaxSize(b *testing.B) {
 		i := 0
 		for pb.Next() {
 			c.Get(keys[i%n])
+			i++
+		}
+	})
+}
+
+// BenchmarkEvictionChurnLarge is BenchmarkEvictionChurn with a shard an
+// order of magnitude bigger, isolating how the CLOCK sweep scales with the
+// number of entries it may have to walk — the cost behind goache's Bounded
+// numbers growing ~5.7x from 1,000 to 1,000,000 entries in the cross-library
+// comparison (see docs/adr/0016-clock-eviction.md and
+// docs/performance-analysis.md T5). One shard keeps the sweep length equal
+// to the entry count instead of dividing it by the shard count.
+func BenchmarkEvictionChurnLarge(b *testing.B) {
+	const limit = 100000
+	c := New[string, int](WithShardCount(1), WithMaxSize(limit))
+	for i := range limit {
+		c.Set(strconv.Itoa(i), i)
+	}
+
+	b.ReportAllocs()
+	i := limit
+	for b.Loop() {
+		c.Set(strconv.Itoa(i), i) // always a brand-new key: always evicts
+		i++
+	}
+}
+
+// BenchmarkEvictionChurnHot evicts against a shard where most entries were
+// just read, so nearly every slot the hand passes carries a set reference
+// bit and has to be cleared before anything can be evicted — CLOCK's
+// worst case, and the one a contiguous bit map can clear in bulk.
+func BenchmarkEvictionChurnHot(b *testing.B) {
+	const limit = 100000
+	c := New[string, int](WithShardCount(1), WithMaxSize(limit))
+	keys := benchKeys(limit)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+	for _, k := range keys { // set every reference bit
+		c.Get(k)
+	}
+
+	b.ReportAllocs()
+	i := limit
+	for b.Loop() {
+		c.Set(strconv.Itoa(i), i)
+		i++
+	}
+}
+
+// The *Constrained benchmarks model the shape a Go service actually has in
+// a CPU-limited container: far more concurrent request goroutines than
+// cores to run them on. A Kubernetes pod with `limits.cpu: 100m` gets a
+// tenth of a core, and Go 1.25+ derives GOMAXPROCS from the cgroup quota,
+// so such a pod runs with GOMAXPROCS=1 while still serving dozens of
+// requests at once.
+//
+// b.RunParallel's default spawns exactly GOMAXPROCS goroutines, which at
+// -cpu=1 means a single goroutine and therefore no contention at all —
+// that measures overhead, not the constrained case. SetParallelism(32)
+// puts 32 goroutines per P in flight instead, so at -cpu=1 thirty-two
+// goroutines contend for one core: goroutines get preempted mid-critical-
+// section, and whether they collide on the same lock starts to matter
+// again even without true parallelism.
+//
+// Run the sweep with `make bench-cpu`. See
+// docs/adr/0025-cpu-constrained-benchmarks.md.
+
+const constrainedGoroutinesPerP = 32
+
+func BenchmarkParallelGetConstrained(b *testing.B) {
+	c := New[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	b.SetParallelism(constrainedGoroutinesPerP)
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			c.Get(keys[i%n])
+			i++
+		}
+	})
+}
+
+func BenchmarkParallelGetSetConstrained(b *testing.B) {
+	c := New[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	b.SetParallelism(constrainedGoroutinesPerP)
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			k := keys[i%n]
+			if i%10 == 0 {
+				c.Set(k, i)
+			} else {
+				c.Get(k)
+			}
 			i++
 		}
 	})

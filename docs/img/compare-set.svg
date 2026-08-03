@@ -1,28 +1,75 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="640" height="312" viewBox="0 0 640 312" font-family="Segoe UI, Helvetica, Arial, sans-serif">
-<rect width="640" height="312" fill="#ffffff"/>
-<text x="190" y="24" font-size="16" font-weight="600" fill="#1f2933">Set at n=100,000: goache vs other Go cache libraries (ns/op, lower is better)</text>
-<line x1="190" y1="40" x2="190" y2="76" stroke="#cbd5e1" stroke-width="1"/>
-<text x="180" y="63" font-size="13" fill="#1f2933" text-anchor="end">goache</text>
-<rect x="190" y="44" width="40.9" height="28" rx="3" fill="#059669"/>
-<text x="238.9" y="63" font-size="13" fill="#1f2933">32.63 ns/op</text>
-<line x1="190" y1="82" x2="190" y2="118" stroke="#cbd5e1" stroke-width="1"/>
-<text x="180" y="105" font-size="13" fill="#1f2933" text-anchor="end">go-cache</text>
-<rect x="190" y="86" width="49.0" height="28" rx="3" fill="#2563eb"/>
-<text x="247.0" y="105" font-size="13" fill="#1f2933">39.11 ns/op</text>
-<line x1="190" y1="124" x2="190" y2="160" stroke="#cbd5e1" stroke-width="1"/>
-<text x="180" y="147" font-size="13" fill="#1f2933" text-anchor="end">freecache</text>
-<rect x="190" y="128" width="108.4" height="28" rx="3" fill="#2563eb"/>
-<text x="306.4" y="147" font-size="13" fill="#1f2933">86.50 ns/op</text>
-<line x1="190" y1="166" x2="190" y2="202" stroke="#cbd5e1" stroke-width="1"/>
-<text x="180" y="189" font-size="13" fill="#1f2933" text-anchor="end">otter</text>
-<rect x="190" y="170" width="172.4" height="28" rx="3" fill="#2563eb"/>
-<text x="370.4" y="189" font-size="13" fill="#1f2933">137.60 ns/op</text>
-<line x1="190" y1="208" x2="190" y2="244" stroke="#cbd5e1" stroke-width="1"/>
-<text x="180" y="231" font-size="13" fill="#1f2933" text-anchor="end">theine</text>
-<rect x="190" y="212" width="251.0" height="28" rx="3" fill="#2563eb"/>
-<text x="449.0" y="231" font-size="13" fill="#1f2933">200.40 ns/op</text>
-<line x1="190" y1="250" x2="190" y2="286" stroke="#cbd5e1" stroke-width="1"/>
-<text x="180" y="273" font-size="13" fill="#1f2933" text-anchor="end">ristretto</text>
-<rect x="190" y="254" width="360.0" height="28" rx="3" fill="#2563eb"/>
-<text x="558.0" y="273" font-size="13" fill="#1f2933">287.40 ns/op</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="738" height="380" viewBox="0 0 738 380" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="738" height="380" fill="#ffffff"/>
+<text x="22" y="26" font-size="16" font-weight="600" fill="#1f2933">Set: goache vs other Go cache libraries</text>
+<text x="22" y="44" font-size="12" fill="#6b7280">ns/op — lower is better</text>
+<line x1="62.0" y1="334.0" x2="612.0" y2="334.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="54.0" y="338.0" font-size="11" fill="#6b7280" text-anchor="end">0</text>
+<line x1="62.0" y1="263.5" x2="612.0" y2="263.5" stroke="#e5e7eb" stroke-width="1"/>
+<text x="54.0" y="267.5" font-size="11" fill="#6b7280" text-anchor="end">125</text>
+<line x1="62.0" y1="193.0" x2="612.0" y2="193.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="54.0" y="197.0" font-size="11" fill="#6b7280" text-anchor="end">250</text>
+<line x1="62.0" y1="122.5" x2="612.0" y2="122.5" stroke="#e5e7eb" stroke-width="1"/>
+<text x="54.0" y="126.5" font-size="11" fill="#6b7280" text-anchor="end">375</text>
+<line x1="62.0" y1="52.0" x2="612.0" y2="52.0" stroke="#e5e7eb" stroke-width="1"/>
+<text x="54.0" y="56.0" font-size="11" fill="#6b7280" text-anchor="end">500</text>
+<text x="62.0" y="354.0" font-size="11" fill="#6b7280" text-anchor="middle">1k</text>
+<text x="190.1" y="354.0" font-size="11" fill="#6b7280" text-anchor="middle">5k</text>
+<text x="373.5" y="354.0" font-size="11" fill="#6b7280" text-anchor="middle">50k</text>
+<text x="428.7" y="354.0" font-size="11" fill="#6b7280" text-anchor="middle">100k</text>
+<text x="612.0" y="354.0" font-size="11" fill="#6b7280" text-anchor="middle">1M</text>
+<text x="337.0" y="372.0" font-size="11" fill="#6b7280" text-anchor="middle">entries</text>
+<path d="M62.0 318.1 L190.1 317.0 L373.5 314.1 L428.7 311.9 L612.0 260.3" fill="none" stroke="#eb6834" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="62.0" cy="318.1" r="4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
+<circle cx="190.1" cy="317.0" r="4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
+<circle cx="373.5" cy="314.1" r="4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
+<circle cx="428.7" cy="311.9" r="4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
+<circle cx="612.0" cy="260.3" r="4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
+<path d="M62.0 313.8 L190.1 313.3 L373.5 300.7 L428.7 285.2 L612.0 228.5" fill="none" stroke="#1baf7a" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="62.0" cy="313.8" r="4" fill="#1baf7a" stroke="#ffffff" stroke-width="2"/>
+<circle cx="190.1" cy="313.3" r="4" fill="#1baf7a" stroke="#ffffff" stroke-width="2"/>
+<circle cx="373.5" cy="300.7" r="4" fill="#1baf7a" stroke="#ffffff" stroke-width="2"/>
+<circle cx="428.7" cy="285.2" r="4" fill="#1baf7a" stroke="#ffffff" stroke-width="2"/>
+<circle cx="612.0" cy="228.5" r="4" fill="#1baf7a" stroke="#ffffff" stroke-width="2"/>
+<path d="M62.0 255.2 L190.1 260.3 L373.5 258.9 L428.7 256.4 L612.0 206.6" fill="none" stroke="#eda100" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="62.0" cy="255.2" r="4" fill="#eda100" stroke="#ffffff" stroke-width="2"/>
+<circle cx="190.1" cy="260.3" r="4" fill="#eda100" stroke="#ffffff" stroke-width="2"/>
+<circle cx="373.5" cy="258.9" r="4" fill="#eda100" stroke="#ffffff" stroke-width="2"/>
+<circle cx="428.7" cy="256.4" r="4" fill="#eda100" stroke="#ffffff" stroke-width="2"/>
+<circle cx="612.0" cy="206.6" r="4" fill="#eda100" stroke="#ffffff" stroke-width="2"/>
+<path d="M62.0 245.4 L190.1 244.9 L373.5 234.6 L428.7 221.0 L612.0 101.1" fill="none" stroke="#e87ba4" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="62.0" cy="245.4" r="4" fill="#e87ba4" stroke="#ffffff" stroke-width="2"/>
+<circle cx="190.1" cy="244.9" r="4" fill="#e87ba4" stroke="#ffffff" stroke-width="2"/>
+<circle cx="373.5" cy="234.6" r="4" fill="#e87ba4" stroke="#ffffff" stroke-width="2"/>
+<circle cx="428.7" cy="221.0" r="4" fill="#e87ba4" stroke="#ffffff" stroke-width="2"/>
+<circle cx="612.0" cy="101.1" r="4" fill="#e87ba4" stroke="#ffffff" stroke-width="2"/>
+<path d="M62.0 207.8 L190.1 200.7 L373.5 198.4 L428.7 171.9 L612.0 129.7" fill="none" stroke="#008300" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="62.0" cy="207.8" r="4" fill="#008300" stroke="#ffffff" stroke-width="2"/>
+<circle cx="190.1" cy="200.7" r="4" fill="#008300" stroke="#ffffff" stroke-width="2"/>
+<circle cx="373.5" cy="198.4" r="4" fill="#008300" stroke="#ffffff" stroke-width="2"/>
+<circle cx="428.7" cy="171.9" r="4" fill="#008300" stroke="#ffffff" stroke-width="2"/>
+<circle cx="612.0" cy="129.7" r="4" fill="#008300" stroke="#ffffff" stroke-width="2"/>
+<path d="M62.0 318.3 L190.1 320.6 L373.5 317.8 L428.7 315.6 L612.0 262.3" fill="none" stroke="#2a78d6" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="62.0" cy="318.3" r="4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<circle cx="190.1" cy="320.6" r="4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<circle cx="373.5" cy="317.8" r="4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<circle cx="428.7" cy="315.6" r="4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<circle cx="612.0" cy="262.3" r="4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<line x1="636.0" y1="58.0" x2="654.0" y2="58.0" stroke="#2a78d6" stroke-width="3.5" stroke-linecap="round"/>
+<circle cx="645.0" cy="58.0" r="4" fill="#2a78d6" stroke="#ffffff" stroke-width="2"/>
+<text x="662.0" y="62.0" font-size="12" font-weight="600" fill="#1f2933">goache</text>
+<line x1="636.0" y1="80.0" x2="654.0" y2="80.0" stroke="#eb6834" stroke-width="2.0" stroke-linecap="round"/>
+<circle cx="645.0" cy="80.0" r="4" fill="#eb6834" stroke="#ffffff" stroke-width="2"/>
+<text x="662.0" y="84.0" font-size="12" font-weight="400" fill="#1f2933">go-cache</text>
+<line x1="636.0" y1="102.0" x2="654.0" y2="102.0" stroke="#1baf7a" stroke-width="2.0" stroke-linecap="round"/>
+<circle cx="645.0" cy="102.0" r="4" fill="#1baf7a" stroke="#ffffff" stroke-width="2"/>
+<text x="662.0" y="106.0" font-size="12" font-weight="400" fill="#1f2933">freecache</text>
+<line x1="636.0" y1="124.0" x2="654.0" y2="124.0" stroke="#eda100" stroke-width="2.0" stroke-linecap="round"/>
+<circle cx="645.0" cy="124.0" r="4" fill="#eda100" stroke="#ffffff" stroke-width="2"/>
+<text x="662.0" y="128.0" font-size="12" font-weight="400" fill="#1f2933">otter</text>
+<line x1="636.0" y1="146.0" x2="654.0" y2="146.0" stroke="#008300" stroke-width="2.0" stroke-linecap="round"/>
+<circle cx="645.0" cy="146.0" r="4" fill="#008300" stroke="#ffffff" stroke-width="2"/>
+<text x="662.0" y="150.0" font-size="12" font-weight="400" fill="#1f2933">ristretto</text>
+<line x1="636.0" y1="168.0" x2="654.0" y2="168.0" stroke="#e87ba4" stroke-width="2.0" stroke-linecap="round"/>
+<circle cx="645.0" cy="168.0" r="4" fill="#e87ba4" stroke="#ffffff" stroke-width="2"/>
+<text x="662.0" y="172.0" font-size="12" font-weight="400" fill="#1f2933">theine</text>
 </svg>

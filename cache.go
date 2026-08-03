@@ -111,6 +111,18 @@
 // what hasn't been touched since we last passed by" without ever taking a
 // write lock on the read path.
 //
+// That walk is short in practice, which is worth knowing before trying to
+// make it faster: instrumenting it measured 0.00-2.54 hand steps per
+// eviction across churn and read-heavy workloads (1.00 even at nine reads
+// per write). Entries near the hand are the oldest ones, whose bits an
+// earlier pass already cleared, while reads land on recently-inserted keys
+// far from it. A contiguous per-shard bit map replacing this ring was
+// designed and rejected on that evidence — see
+// docs/adr/0023-reject-clock-bitmap.md, which also shows the growth in
+// bounded-cache cost with size is mostly working set versus CPU cache
+// (unbounded Set scales 4.56x from 1,000 to 1,000,000 entries with no
+// eviction at all), not eviction bookkeeping.
+//
 // This does cost something even when WithMaxSize isn't used: to let Get
 // flip that bit without a write lock, entries must be individually
 // addressable, heap-allocated objects rather than plain values inlined in
@@ -364,6 +376,27 @@ type Cache[K comparable, V any] struct {
 	// a new key can reuse one instead of a fresh heap allocation — see the
 	// package doc comment's "Automatic eviction" section.
 	entryPool sync.Pool
+	// setBuckets/deleteBuckets cache the per-call shard-grouping scratch
+	// space SetMany/DeleteMany use, so repeated bulk calls on one cache
+	// reuse both the outer slice and every inner bucket's capacity instead
+	// of reallocating them. A caller takes the set with Swap(nil) and puts
+	// it back with Store on the way out; a concurrent caller that finds nil
+	// simply allocates its own, so this never blocks and never shares a set
+	// between goroutines. Deliberately not a sync.Pool — that measured
+	// 30-64% slower on one-shot bulk calls.
+	//
+	// Parked buckets are truncated (bucket[:0]) but not zeroed, so the most
+	// recent bulk call's keys — and, for SetMany, values — stay reachable
+	// until the next bulk call on this cache overwrites those slots or the
+	// cache itself is collected. Zeroing instead measured 10-22% slower on
+	// one-shot bulk calls, a worse trade than retaining one batch:
+	// SetMany's entries are in the cache's own maps anyway, and
+	// DeleteMany's are one batch of keys. Correctness never depends on it —
+	// grouping always appends from index 0, so stale elements past the new
+	// length are unreachable. See
+	// docs/adr/0022-bulk-bucket-scratch-reuse.md.
+	setBuckets    atomic.Pointer[[][]Entry[K, V]]
+	deleteBuckets atomic.Pointer[[][]K]
 }
 
 // Option configures a Cache created with New.
@@ -539,7 +572,12 @@ func (c *Cache[K, V]) SetMany(entries []Entry[K, V]) {
 	var now time.Time
 	nowSet := false
 
-	buckets := make([][]Entry[K, V], len(c.shards))
+	bp := c.setBuckets.Swap(nil)
+	if bp == nil {
+		b := make([][]Entry[K, V], len(c.shards))
+		bp = &b
+	}
+	buckets := *bp
 	for _, e := range entries {
 		idx := maphash.Comparable(c.seed, e.Key) & c.mask
 		buckets[idx] = append(buckets[idx], e)
@@ -563,7 +601,9 @@ func (c *Cache[K, V]) SetMany(entries []Entry[K, V]) {
 			s.set(e.Key, e.Value, expiresAt, &c.entryPool)
 		}
 		s.mu.Unlock()
+		buckets[i] = bucket[:0]
 	}
+	c.setBuckets.Store(bp)
 }
 
 // Get returns the value stored for key, and whether it was found. An entry
@@ -622,7 +662,12 @@ func (c *Cache[K, V]) DeleteMany(keys []K) {
 		return
 	}
 
-	buckets := make([][]K, len(c.shards))
+	bp := c.deleteBuckets.Swap(nil)
+	if bp == nil {
+		b := make([][]K, len(c.shards))
+		bp = &b
+	}
+	buckets := *bp
 	for _, k := range keys {
 		idx := maphash.Comparable(c.seed, k) & c.mask
 		buckets[idx] = append(buckets[idx], k)
@@ -645,7 +690,9 @@ func (c *Cache[K, V]) DeleteMany(keys []K) {
 			}
 		}
 		s.mu.Unlock()
+		buckets[i] = bucket[:0]
 	}
+	c.deleteBuckets.Store(bp)
 }
 
 // Clear removes every entry from the cache, across all shards. Each shard's

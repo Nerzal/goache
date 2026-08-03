@@ -186,7 +186,22 @@ warning in [ADR 0021](adr/0021-reject-inline-storage-unbounded.md).
   Mitigation: the two modes never mix on one shard; `-race` suite plus
   `TestConcurrentEvictionChurn` already cover both paths.
 
-### T4 — reuse SetMany/DeleteMany bucket slices per Cache (small)
+### T4 — reuse SetMany/DeleteMany bucket slices per Cache (small) — DONE, accepted (ADR 0022)
+
+**Outcome**: accepted, but not as a `sync.Pool`. New repeated-call
+benchmarks exposed the real cost first — **101 allocations per bulk call**
+(one outer slice plus one per non-empty bucket), invisible behind the
+existing `BenchmarkSetMany`, which builds a throwaway cache and so can never
+show reuse. A `sync.Pool` delivered the warm-path win (-53%/-59%) but cost
+30-64% on one-shot calls, the same "pool only pays when something both
+fills and drains it" trap as [ADR 0018](adr/0018-gemini-analysis-experiments.md)
+item 4. Replacing it with a single `atomic.Pointer` swap per cache kept the
+win and erased the cold cost: `SetManyRepeated` -54%, `DeleteManyRepeated`
+-60%, both **101 -> 0 allocs/op**, `FreshLoad_*` flat. `BenchmarkSetMany`
+still regresses 3-6% — the pre-registered guard said reject at >3%, and
+[ADR 0022](adr/0022-bulk-bucket-scratch-reuse.md) records overriding it
+explicitly, with the reasoning that the guard was the wrong benchmark for a
+change about reuse.
 
 - **Hypothesis**: `SetMany`'s 2 allocs/op (outer `[][]Entry` + inner
   growth) and `DeleteMany`'s 1 are per-call garbage that a per-`Cache`
@@ -205,7 +220,23 @@ warning in [ADR 0021](adr/0021-reject-inline-storage-unbounded.md).
 - **Reject if**: `BenchmarkFreshLoad_*` or `BenchmarkSetMany` ns/op
   regresses >3%.
 
-### T5 — compact CLOCK: referenced bits in a per-shard bitmap (medium, high risk)
+### T5 — compact CLOCK: referenced bits in a per-shard bitmap (medium, high risk) — DONE, REJECTED (ADR 0023)
+
+**Outcome**: rejected on measurement *before* implementing. Instrumenting the
+current sweep showed the CLOCK hand walks **0.00-2.54 slots per eviction**
+across every workload this task targets — 1.00 even under a continuous
+9-reads-per-write mix, 0.00 in pure churn. The pointer-chasing chain this
+task exists to flatten is one dereference long, so a contiguous bit map
+cannot improve on it, while it would add a slot allocator, a second
+indirection, and false sharing between the 512 slots that share a cache
+line on the *read* path (the pre-registered reject condition).
+
+That also resolves the `Bounded`-at-1M question this backlog opened with:
+goache's **unbounded** `Set` already scales 4.56x from n=1,000 to
+n=1,000,000 with no eviction involved at all, versus 5.68x for `Bounded` —
+so ~80% of the growth is working-set-versus-cache, shared with every library
+in the comparison, and only ~1.25x is eviction-specific. Full reasoning in
+[ADR 0023](adr/0023-reject-clock-bitmap.md).
 
 - **Hypothesis**: the eviction hand walk's cost at large shards is one
   dependent cache miss per visited entry (each `referenced` bit lives in a

@@ -1,4 +1,4 @@
-.PHONY: build test test-race bench bench-compare vet fmt fmt-check lint tidy charts ci clean
+.PHONY: build test test-race bench bench-cpu bench-compare bench-compare-cpu vet fmt fmt-check lint tidy charts ci clean
 
 build:
 	go build ./...
@@ -13,6 +13,16 @@ test-race:
 
 bench:
 	go test -bench=. -benchmem -run=^$$ ./...
+
+# CPU-constrained sweep: how goache behaves when it does not get 24 cores.
+# A Kubernetes pod with `limits.cpu: 100m` runs with GOMAXPROCS=1 under
+# Go 1.25+, which is the leftmost column. See docs/adr/0025.
+bench-cpu:
+	go test -bench='Parallel' -benchmem -run=^$$ -cpu=1,2,4,8,24 ./...
+
+# The same sweep across every compared library, at a fixed 100k working set.
+bench-compare-cpu:
+	cd bench && go test -bench='ParallelGet/n=100000$$' -benchmem -run=^$$ -cpu=1,2,4,8,24 ./...
 
 bench-compare:
 	cd bench && go test -bench=. -benchmem -run=^$$ ./...

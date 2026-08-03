@@ -29,6 +29,10 @@ not re-attempted blind.
 | [0019](0019-single-slot-freelist.md) | Per-shard single-slot entry freelist for unbounded shards (T1) | Accepted |
 | [0020](0020-shard-count-does-not-scale-eviction.md) | Shard count does not scale bounded eviction (T2); WithMaxSize made a hard bound | Rejected (T2) / Accepted (capacity fix) |
 | [0021](0021-reject-inline-storage-unbounded.md) | Reject inline entry storage for unbounded caches (T3) — 20% concurrent mixed read/write regression | Rejected / reverted |
+| [0022](0022-bulk-bucket-scratch-reuse.md) | Reuse SetMany/DeleteMany shard-grouping scratch space via atomic swap (T4) | Accepted |
+| [0023](0023-reject-clock-bitmap.md) | Reject contiguous CLOCK bit map (T5) — measured hand walk is ~1 step, not thousands | Rejected (not implemented) |
+| [0024](0024-chart-per-benchmark-table.md) | A chart under every benchmark table; line charts for the size-parametrized comparisons | Accepted |
+| [0025](0025-cpu-constrained-benchmarks.md) | Benchmark under a CPU limit (GOMAXPROCS 1-24), not just on 24 cores | Accepted |
 
 Adding a new decision: copy the format of an existing record, number it
 sequentially, and add a row here.
