@@ -13,9 +13,9 @@ jobs:
     name: build, vet, fmt, test (-race)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -47,21 +47,28 @@ jobs:
     name: golangci-lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
+      # Pinned, not "latest": the action's "latest" for its v6 line resolved
+      # to golangci-lint v1.64.8, which is built with Go 1.24 and refuses to
+      # load a config targeting a newer Go ("the Go language version used to
+      # build golangci-lint is lower than the targeted Go version"). Our
+      # .golangci.yml is also schema v2, which only golangci-lint v2 reads.
+      # Keep GOLANGCI_LINT_VERSION in step with the version `make lint` uses
+      # locally, so a green local run means a green CI run.
       - name: golangci-lint (root module)
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.12.1
 
       - name: golangci-lint (bench module)
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.12.1
           working-directory: bench
 
   benchmark:
@@ -69,9 +76,9 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
