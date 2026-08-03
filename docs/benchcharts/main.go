@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 type bar struct {
@@ -105,25 +106,42 @@ const (
 
 // renderBarChart draws a horizontal bar chart, smallest value first (bars
 // are "lower ns/op is better", so the fastest result reads at the top).
+//
+// The label column is sized from the longest label, never below leftMargin,
+// so a chart whose labels carry two things (benchmark plus implementation,
+// e.g. "ParallelGetSet · NewSingleCore") widens the image instead of being
+// clipped by it — the same rule renderLineChart applies to its legend. The
+// plot area stays a fixed width across every chart so bar lengths remain
+// comparable between them.
 func renderBarChart(title, unit string, bars []bar) string {
 	sorted := make([]bar, len(bars))
 	copy(sorted, bars)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].value < sorted[j].value })
 
 	maxVal := 0.0
+	longestLabel := 0
 	for _, b := range sorted {
 		if b.value > maxVal {
 			maxVal = b.value
 		}
+		if n := utf8.RuneCountInString(b.label); n > longestLabel {
+			longestLabel = n
+		}
 	}
 
-	height := topMargin + bottomMargin + len(sorted)*(barHeight+barGap)
+	// barLabelCharWidth approximates the advance width of the 13px label font;
+	// the +10 matches the gap between label and axis below.
+	const barLabelCharWidth = 6.9
+	left := max(leftMargin, int(float64(longestLabel)*barLabelCharWidth)+16)
+
 	plotWidth := chartWidth - leftMargin - rightMargin
+	width := left + plotWidth + rightMargin
+	height := topMargin + bottomMargin + len(sorted)*(barHeight+barGap)
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d" font-family="Segoe UI, Helvetica, Arial, sans-serif">`+"\n", chartWidth, height, chartWidth, height)
-	fmt.Fprintf(&sb, `<rect width="%d" height="%d" fill="%s"/>`+"\n", chartWidth, height, colorBg)
-	fmt.Fprintf(&sb, `<text x="%d" y="24" font-size="16" font-weight="600" fill="%s">%s</text>`+"\n", leftMargin, colorText, escapeXML(title))
+	fmt.Fprintf(&sb, `<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d" font-family="Segoe UI, Helvetica, Arial, sans-serif">`+"\n", width, height, width, height)
+	fmt.Fprintf(&sb, `<rect width="%d" height="%d" fill="%s"/>`+"\n", width, height, colorBg)
+	fmt.Fprintf(&sb, `<text x="%d" y="24" font-size="16" font-weight="600" fill="%s">%s</text>`+"\n", left, colorText, escapeXML(title))
 
 	for i, b := range sorted {
 		y := topMargin + i*(barHeight+barGap)
@@ -137,13 +155,13 @@ func renderBarChart(title, unit string, bars []bar) string {
 		}
 
 		fmt.Fprintf(&sb, `<line x1="%d" y1="%d" x2="%d" y2="%d" stroke="%s" stroke-width="1"/>`+"\n",
-			leftMargin, y-4, leftMargin, y+barHeight+4, colorAxis)
+			left, y-4, left, y+barHeight+4, colorAxis)
 		fmt.Fprintf(&sb, `<text x="%d" y="%d" font-size="13" fill="%s" text-anchor="end">%s</text>`+"\n",
-			leftMargin-10, y+barHeight/2+5, colorText, escapeXML(b.label))
+			left-10, y+barHeight/2+5, colorText, escapeXML(b.label))
 		fmt.Fprintf(&sb, `<rect x="%d" y="%d" width="%.1f" height="%d" rx="3" fill="%s"/>`+"\n",
-			leftMargin, y, barWidth, barHeight, color)
+			left, y, barWidth, barHeight, color)
 		fmt.Fprintf(&sb, `<text x="%.1f" y="%d" font-size="13" fill="%s">%s</text>`+"\n",
-			float64(leftMargin)+barWidth+8, y+barHeight/2+5, colorText, escapeXML(formatValue(b.value)+" "+unit))
+			float64(left)+barWidth+8, y+barHeight/2+5, colorText, escapeXML(formatValue(b.value)+" "+unit))
 	}
 
 	sb.WriteString(`</svg>` + "\n")
@@ -554,5 +572,54 @@ func main() {
 		{label: "ristretto", values: []float64{125.5, 108.6, 104.0, 89.94, 76.34}},
 		{label: "otter", values: []float64{140.9, 131.3, 156.1, 159.9, 237.3}},
 		{label: "theine", values: []float64{199.4, 190.3, 184.8, 233.1, 347.5}},
+	}))
+
+	// Single-core mode against the library it has to beat — from README.md's
+	// "Single-core mode: NewSingleCore" section
+	// (`make bench-compare-singlecore`, -cpu=1). Midpoints of the -count=3
+	// ranges printed in that table. A bar chart rather than a line chart
+	// because the x axis here is a set of benchmarks, not a scale. See
+	// docs/adr/0026-single-core-cache.md.
+	write(outDir, "singlecore-vs-gocache.svg", renderBarChart("Single core (GOMAXPROCS=1), 100,000 entries (ns/op, lower is better)", "ns/op", []bar{
+		{label: "Get · NewSingleCore", value: 17.21, highlight: true},
+		{label: "Get · go-cache", value: 23.15},
+		{label: "Get · New (sharded)", value: 29.00},
+		{label: "Set · NewSingleCore", value: 26.72, highlight: true},
+		{label: "Set · go-cache", value: 53.09},
+		{label: "Set · New (sharded)", value: 37.40},
+		{label: "ParallelGet · NewSingleCore", value: 17.03, highlight: true},
+		{label: "ParallelGet · go-cache", value: 21.48},
+		{label: "ParallelGet · New (sharded)", value: 28.23},
+		{label: "ParallelGetSet · NewSingleCore", value: 18.23, highlight: true},
+		{label: "ParallelGetSet · go-cache", value: 23.50},
+		{label: "ParallelGetSet · New (sharded)", value: 31.23},
+	}))
+
+	// Single-core mode against the sharded Cache, benchmark by benchmark —
+	// same README section (`make bench-singlecore`, -cpu=1). Restricted to
+	// the per-operation ns/op rows: Purge and Clear are milliseconds and
+	// SetManyRepeated/DeleteManyRepeated are per 100-key call, so putting
+	// either on this axis would flatten every other bar to nothing — the same
+	// reason Clear is left out of deletion-ops.svg above. The excluded rows
+	// are in README.md's table with their own numbers.
+	write(outDir, "singlecore-vs-sharded.svg", renderBarChart("NewSingleCore vs New at one core, per operation (ns/op, lower is better)", "ns/op", []bar{
+		{label: "Get · NewSingleCore", value: 16.39, highlight: true},
+		{label: "Get · New", value: 25.20},
+		{label: "ParallelGet · NewSingleCore", value: 16.25, highlight: true},
+		{label: "ParallelGet · New", value: 24.46},
+		{label: "ParallelGetSet · NewSingleCore", value: 17.70, highlight: true},
+		{label: "ParallelGetSet · New", value: 27.14},
+		{label: "GetWithMaxSize · NewSingleCore", value: 20.55, highlight: true},
+		{label: "GetWithMaxSize · New", value: 27.56},
+		{label: "GetWithTTL · NewSingleCore", value: 21.68, highlight: true},
+		{label: "GetWithTTL · New", value: 29.93},
+		{label: "Set · NewSingleCore", value: 26.04, highlight: true},
+		{label: "Set · New", value: 31.51},
+		{label: "SetWithTTL · NewSingleCore", value: 35.31, highlight: true},
+		{label: "SetWithTTL · New", value: 44.59},
+		{label: "SetWithMaxSize · NewSingleCore", value: 58.43, highlight: true},
+		{label: "SetWithMaxSize · New", value: 85.60},
+		{label: "SetMany · NewSingleCore", value: 58.79, highlight: true},
+		{label: "SetMany · New", value: 100.1},
 	}))
 }

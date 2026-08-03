@@ -33,6 +33,7 @@ not re-attempted blind.
 | [0023](0023-reject-clock-bitmap.md) | Reject contiguous CLOCK bit map (T5) — measured hand walk is ~1 step, not thousands | Rejected (not implemented) |
 | [0024](0024-chart-per-benchmark-table.md) | A chart under every benchmark table; line charts for the size-parametrized comparisons | Accepted |
 | [0025](0025-cpu-constrained-benchmarks.md) | Benchmark under a CPU limit (GOMAXPROCS 1-24), not just on 24 cores | Accepted |
+| [0026](0026-single-core-cache.md) | A second, unsharded implementation (`NewSingleCore`) for single-core deployments; interface-returning `New` and a `shardFor` branch rejected on measurement | Accepted |
 
 Adding a new decision: copy the format of an existing record, number it
 sequentially, and add a row here.

@@ -1,16 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="640" height="186" viewBox="0 0 640 186" font-family="Segoe UI, Helvetica, Arial, sans-serif">
-<rect width="640" height="186" fill="#ffffff"/>
-<text x="190" y="24" font-size="16" font-weight="600" fill="#1f2933">WithMaxSize eviction cost on Set (ns/op, lower is better)</text>
-<line x1="190" y1="40" x2="190" y2="76" stroke="#cbd5e1" stroke-width="1"/>
-<text x="180" y="63" font-size="13" fill="#1f2933" text-anchor="end">Set (unbounded)</text>
-<rect x="190" y="44" width="88.5" height="28" rx="3" fill="#059669"/>
-<text x="286.5" y="63" font-size="13" fill="#1f2933">30.84 ns/op</text>
-<line x1="190" y1="82" x2="190" y2="118" stroke="#cbd5e1" stroke-width="1"/>
-<text x="180" y="105" font-size="13" fill="#1f2933" text-anchor="end">SetWithMaxSize (~50% evict)</text>
-<rect x="190" y="86" width="208.4" height="28" rx="3" fill="#2563eb"/>
-<text x="406.4" y="105" font-size="13" fill="#1f2933">72.63 ns/op</text>
-<line x1="190" y1="124" x2="190" y2="160" stroke="#cbd5e1" stroke-width="1"/>
-<text x="180" y="147" font-size="13" fill="#1f2933" text-anchor="end">EvictionChurn (always evicts)</text>
-<rect x="190" y="128" width="330.0" height="28" rx="3" fill="#2563eb"/>
-<text x="528.0" y="147" font-size="13" fill="#1f2933">115.00 ns/op</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="666" height="186" viewBox="0 0 666 186" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="666" height="186" fill="#ffffff"/>
+<text x="216" y="24" font-size="16" font-weight="600" fill="#1f2933">WithMaxSize eviction cost on Set (ns/op, lower is better)</text>
+<line x1="216" y1="40" x2="216" y2="76" stroke="#cbd5e1" stroke-width="1"/>
+<text x="206" y="63" font-size="13" fill="#1f2933" text-anchor="end">Set (unbounded)</text>
+<rect x="216" y="44" width="88.5" height="28" rx="3" fill="#059669"/>
+<text x="312.5" y="63" font-size="13" fill="#1f2933">30.84 ns/op</text>
+<line x1="216" y1="82" x2="216" y2="118" stroke="#cbd5e1" stroke-width="1"/>
+<text x="206" y="105" font-size="13" fill="#1f2933" text-anchor="end">SetWithMaxSize (~50% evict)</text>
+<rect x="216" y="86" width="208.4" height="28" rx="3" fill="#2563eb"/>
+<text x="432.4" y="105" font-size="13" fill="#1f2933">72.63 ns/op</text>
+<line x1="216" y1="124" x2="216" y2="160" stroke="#cbd5e1" stroke-width="1"/>
+<text x="206" y="147" font-size="13" fill="#1f2933" text-anchor="end">EvictionChurn (always evicts)</text>
+<rect x="216" y="128" width="330.0" height="28" rx="3" fill="#2563eb"/>
+<text x="554.0" y="147" font-size="13" fill="#1f2933">115.00 ns/op</text>
 </svg>
