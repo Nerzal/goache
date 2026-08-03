@@ -558,3 +558,406 @@ func BenchmarkParallelGet(b *testing.B) {
 		}
 	})
 }
+
+// The BenchmarkSingleCore* benchmarks mirror the ones above against
+// SingleCoreCache. Every one has a same-named Cache counterpart on purpose:
+// the pair is only meaningful read together, and only at -cpu=1, which is
+// the regime SingleCoreCache exists for. Run them with `make bench-singlecore`
+// and read the numbers next to the cross-library comparison in bench/. See
+// docs/adr/0026-single-core-cache.md.
+
+func BenchmarkSingleCoreSet(b *testing.B) {
+	c := NewSingleCore[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		c.Set(keys[i%n], i)
+		i++
+	}
+}
+
+func BenchmarkSingleCoreGet(b *testing.B) {
+	c := NewSingleCore[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		c.Get(keys[i%n])
+		i++
+	}
+}
+
+func BenchmarkSingleCoreGetMiss(b *testing.B) {
+	c := NewSingleCore[string, int]()
+	const n = 100000
+	for i, k := range benchKeys(n) {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		c.Get("missing-" + strconv.Itoa(i))
+		i++
+	}
+}
+
+func BenchmarkSingleCoreSetWithTTL(b *testing.B) {
+	c := NewSingleCore[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		c.SetWithTTL(keys[i%n], i, time.Hour)
+		i++
+	}
+}
+
+func BenchmarkSingleCoreGetWithTTL(b *testing.B) {
+	c := NewSingleCore[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.SetWithTTL(k, i, time.Hour)
+	}
+
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		c.Get(keys[i%n])
+		i++
+	}
+}
+
+// BenchmarkSingleCoreSetMany uses the same fresh-cache-per-batch shape as
+// BenchmarkSetMany so the two are directly comparable — this measures cold
+// bulk ingestion, where SingleCoreCache skips shard grouping entirely.
+func BenchmarkSingleCoreSetMany(b *testing.B) {
+	const batch = 100
+	b.ReportAllocs()
+	for i := 0; i < b.N; i += batch {
+		n := batch
+		if i+n > b.N {
+			n = b.N - i
+		}
+		c := NewSingleCore[string, int]()
+		entries := make([]Entry[string, int], n)
+		for j := 0; j < n; j++ {
+			entries[j] = Entry[string, int]{Key: strconv.Itoa(i + j), Value: i + j}
+		}
+		b.StartTimer()
+		c.SetMany(entries)
+		b.StopTimer()
+	}
+}
+
+func BenchmarkSingleCoreSetManyRepeated(b *testing.B) {
+	const batch = 100
+	c := NewSingleCore[string, int]()
+	entries := make([]Entry[string, int], batch)
+	for j := range entries {
+		entries[j] = Entry[string, int]{Key: strconv.Itoa(j), Value: j}
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		c.SetMany(entries)
+	}
+}
+
+func BenchmarkSingleCoreDeleteManyRepeated(b *testing.B) {
+	const batch = 100
+	c := NewSingleCore[string, int]()
+	keys := make([]string, batch)
+	for j := range keys {
+		keys[j] = strconv.Itoa(j)
+		c.Set(keys[j], j)
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		c.DeleteMany(keys)
+	}
+}
+
+func BenchmarkSingleCoreDeleteSetChurn(b *testing.B) {
+	c := NewSingleCore[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		k := keys[i%n]
+		c.Delete(k)
+		c.Set(k, i)
+		i++
+	}
+}
+
+func BenchmarkSingleCorePurge(b *testing.B) {
+	const n = 100000
+	keys := benchKeys(n)
+
+	b.ReportAllocs()
+	for b.Loop() {
+		b.StopTimer()
+		c := NewSingleCore[string, int]()
+		for i, k := range keys {
+			c.SetWithTTL(k, i, time.Nanosecond)
+		}
+		time.Sleep(time.Millisecond)
+		b.StartTimer()
+
+		c.Purge()
+	}
+}
+
+func BenchmarkSingleCoreClear(b *testing.B) {
+	const n = 100000
+	entries := make([]Entry[string, int], n)
+	for i := range entries {
+		entries[i] = Entry[string, int]{Key: strconv.Itoa(i), Value: i}
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		c := NewSingleCore[string, int]()
+		c.SetMany(entries)
+		c.Clear()
+	}
+}
+
+func BenchmarkSingleCoreSetWithMaxSize(b *testing.B) {
+	c := NewSingleCore[string, int](WithMaxSize(50000))
+	const n = 100000
+	keys := benchKeys(n)
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		c.Set(keys[i%n], i)
+		i++
+	}
+}
+
+func BenchmarkSingleCoreGetWithMaxSize(b *testing.B) {
+	const n = 100000
+	c := NewSingleCore[string, int](WithMaxSize(n))
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		c.Get(keys[i%n])
+		i++
+	}
+}
+
+// BenchmarkSingleCoreEvictionChurn* are the sweep-length probes ADR 0023
+// demands before claiming the bounded path is fine here: Cache spreads its
+// eviction budget over 256 CLOCK rings, SingleCoreCache has exactly one, so
+// ADR 0023's "0.00-2.54 hand steps per eviction" measurement does not carry
+// over. Large is an order of magnitude bigger and Hot pre-reads every key so
+// the hand has to clear a set reference bit on every slot it passes — CLOCK's
+// worst case. Compare against BenchmarkEvictionChurn/-Large/-Hot, which use
+// WithShardCount(1) for exactly this reason.
+
+func BenchmarkSingleCoreEvictionChurn(b *testing.B) {
+	const limit = 10000
+	c := NewSingleCore[string, int](WithMaxSize(limit))
+	for i := range limit {
+		c.Set(strconv.Itoa(i), i)
+	}
+
+	b.ReportAllocs()
+	i := limit
+	for b.Loop() {
+		c.Set(strconv.Itoa(i), i) // always a brand-new key: always evicts
+		i++
+	}
+}
+
+func BenchmarkSingleCoreEvictionChurnLarge(b *testing.B) {
+	const limit = 100000
+	c := NewSingleCore[string, int](WithMaxSize(limit))
+	for i := range limit {
+		c.Set(strconv.Itoa(i), i)
+	}
+
+	b.ReportAllocs()
+	i := limit
+	for b.Loop() {
+		c.Set(strconv.Itoa(i), i)
+		i++
+	}
+}
+
+func BenchmarkSingleCoreEvictionChurnHot(b *testing.B) {
+	const limit = 100000
+	c := NewSingleCore[string, int](WithMaxSize(limit))
+	keys := benchKeys(limit)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+	for _, k := range keys { // set every reference bit
+		c.Get(k)
+	}
+
+	b.ReportAllocs()
+	i := limit
+	for b.Loop() {
+		c.Set(strconv.Itoa(i), i)
+		i++
+	}
+}
+
+func BenchmarkSingleCoreParallelGet(b *testing.B) {
+	c := NewSingleCore[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			c.Get(keys[i%n])
+			i++
+		}
+	})
+}
+
+func BenchmarkSingleCoreParallelGetSet(b *testing.B) {
+	c := NewSingleCore[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			k := keys[i%n]
+			if i%10 == 0 {
+				c.Set(k, i)
+			} else {
+				c.Get(k)
+			}
+			i++
+		}
+	})
+}
+
+// BenchmarkSingleCoreParallelGet*Constrained model the same
+// more-goroutines-than-cores shape as their Cache counterparts — the actual
+// shape of a request handler in a CPU-limited pod, which is precisely
+// SingleCoreCache's target deployment.
+
+func BenchmarkSingleCoreParallelGetConstrained(b *testing.B) {
+	c := NewSingleCore[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	b.SetParallelism(constrainedGoroutinesPerP)
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			c.Get(keys[i%n])
+			i++
+		}
+	})
+}
+
+func BenchmarkSingleCoreParallelGetSetConstrained(b *testing.B) {
+	c := NewSingleCore[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	b.SetParallelism(constrainedGoroutinesPerP)
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		i := 0
+		for pb.Next() {
+			k := keys[i%n]
+			if i%10 == 0 {
+				c.Set(k, i)
+			} else {
+				c.Get(k)
+			}
+			i++
+		}
+	})
+}
+
+// BenchmarkCacherDispatch* price the Cacher interface: identical work, once
+// through the concrete type and once through the interface. The gap is what
+// a caller pays for choosing an implementation at run time, and the reason
+// New/NewSingleCore return concrete types. pickSingleCore is never true, but
+// the compiler cannot prove it, so the interface variable genuinely has two
+// possible dynamic types and the call cannot be devirtualized.
+
+var pickSingleCore = false
+
+func BenchmarkCacherDispatchDirect(b *testing.B) {
+	c := New[string, int]()
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		c.Get(keys[i%n])
+		i++
+	}
+}
+
+func BenchmarkCacherDispatchViaInterface(b *testing.B) {
+	var c Cacher[string, int] = New[string, int]()
+	if pickSingleCore {
+		c = NewSingleCore[string, int]()
+	}
+	const n = 100000
+	keys := benchKeys(n)
+	for i, k := range keys {
+		c.Set(k, i)
+	}
+
+	b.ReportAllocs()
+	i := 0
+	for b.Loop() {
+		c.Get(keys[i%n])
+		i++
+	}
+}

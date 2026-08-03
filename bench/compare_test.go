@@ -843,3 +843,140 @@ func BenchmarkOtter_Bounded(b *testing.B) {
 		}
 	})
 }
+
+// --- single-core comparison ---
+//
+// The benchmarks above answer "which library is fastest", and their headline
+// numbers are 24-core numbers. These answer a narrower question:
+// docs/adr/0025-cpu-constrained-benchmarks.md measured go-cache beating
+// goache at GOMAXPROCS=1, because a sharded cache pays for machinery that a
+// single P returns nothing for. goache.NewSingleCore exists to close that
+// gap (docs/adr/0026-single-core-cache.md), and this is where the claim is
+// checked against the library it has to beat.
+//
+// Read them at -cpu=1 via `make bench-compare-singlecore`. At higher core
+// counts SingleCoreCache's one lock is expected to lose to sharded goache —
+// that is the documented trade, not a regression.
+//
+// Mixed read/write is the case with no prior coverage: BenchmarkGoCache_*
+// above has no ParallelGetSet, so the three below are added together.
+
+func BenchmarkGoacheSingleCore_Set(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := goache.NewSingleCore[string, int]()
+		keys := benchKeys(n)
+		b.ReportAllocs()
+		i := 0
+		for b.Loop() {
+			c.Set(keys[i%n], i)
+			i++
+		}
+	})
+}
+
+func BenchmarkGoacheSingleCore_Get(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := goache.NewSingleCore[string, int]()
+		keys := benchKeys(n)
+		for i, k := range keys {
+			c.Set(k, i)
+		}
+		b.ReportAllocs()
+		i := 0
+		for b.Loop() {
+			c.Get(keys[i%n])
+			i++
+		}
+	})
+}
+
+func BenchmarkGoacheSingleCore_ParallelGet(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := goache.NewSingleCore[string, int]()
+		keys := benchKeys(n)
+		for i, k := range keys {
+			c.Set(k, i)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				c.Get(keys[i%n])
+				i++
+			}
+		})
+	})
+}
+
+func BenchmarkGoacheSingleCore_ParallelGetSet(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := goache.NewSingleCore[string, int]()
+		keys := benchKeys(n)
+		for i, k := range keys {
+			c.Set(k, i)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				k := keys[i%n]
+				if i%10 == 0 {
+					c.Set(k, i)
+				} else {
+					c.Get(k)
+				}
+				i++
+			}
+		})
+	})
+}
+
+func BenchmarkGoache_ParallelGetSet(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := goache.New[string, int]()
+		keys := benchKeys(n)
+		for i, k := range keys {
+			c.Set(k, i)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				k := keys[i%n]
+				if i%10 == 0 {
+					c.Set(k, i)
+				} else {
+					c.Get(k)
+				}
+				i++
+			}
+		})
+	})
+}
+
+func BenchmarkGoCache_ParallelGetSet(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := gocache.New(gocache.NoExpiration, gocache.NoExpiration)
+		keys := benchKeys(n)
+		for i, k := range keys {
+			c.Set(k, i, gocache.NoExpiration)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				k := keys[i%n]
+				if i%10 == 0 {
+					c.Set(k, i, gocache.NoExpiration)
+				} else {
+					c.Get(k)
+				}
+				i++
+			}
+		})
+	})
+}

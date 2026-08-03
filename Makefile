@@ -1,4 +1,4 @@
-.PHONY: build test test-race bench bench-cpu bench-compare bench-compare-cpu vet fmt fmt-check lint tidy charts ci clean
+.PHONY: build test test-race bench bench-cpu bench-singlecore bench-compare bench-compare-cpu bench-compare-singlecore vet fmt fmt-check lint tidy charts ci clean
 
 build:
 	go build ./...
@@ -23,6 +23,17 @@ bench-cpu:
 # The same sweep across every compared library, at a fixed 100k working set.
 bench-compare-cpu:
 	cd bench && go test -bench='ParallelGet/n=100000$$' -benchmem -run=^$$ -cpu=1,2,4,8,24 ./...
+
+# SingleCoreCache against its sharded Cache counterparts, at the one core it
+# exists for. Every BenchmarkSingleCore* has a same-named Cache benchmark;
+# the pair is only meaningful read together. See docs/adr/0026.
+bench-singlecore:
+	go test -bench='SingleCore|Cacher' -benchmem -run=^$$ -cpu=1 ./...
+
+# The same claim checked against the library it has to beat at one core:
+# goache single-core vs sharded goache vs go-cache, 100k working set.
+bench-compare-singlecore:
+	cd bench && go test -bench='(GoacheSingleCore|Goache|GoCache)_(Get|Set|ParallelGet|ParallelGetSet)/n=100000$$' -benchmem -run=^$$ -cpu=1 ./...
 
 bench-compare:
 	cd bench && go test -bench=. -benchmem -run=^$$ ./...
