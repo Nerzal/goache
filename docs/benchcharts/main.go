@@ -1,12 +1,17 @@
-// Command benchcharts regenerates the SVG bar charts embedded in README.md
-// (docs/img/*.svg) from the benchmark numbers documented there. It is not
-// part of the goache library — run it with `make charts` (or
-// `go run ./docs/benchcharts`) whenever benchmark numbers in README.md
-// change, and commit the regenerated SVGs alongside the numbers.
+// Command benchcharts regenerates the SVG bar charts embedded in the two
+// benchmark pages (docs/img/*.svg) from the numbers documented there. It is
+// not part of the goache library — run it with `make charts` (or
+// `go run ./docs/benchcharts`) whenever those numbers change, and commit the
+// regenerated SVGs alongside them.
 //
-// Data below must be kept in sync with the fenced benchmark blocks in
-// README.md by hand — there's no automated extraction, since the README
-// numbers themselves are hand-curated from `go test -bench` output.
+// benchmarks/README.md holds the full record and embeds every chart below.
+// README.md keeps three of them: compare-cpu, singlecore-vs-field and
+// compare-parallel-get. A chart cited by both pages has to satisfy both, so
+// changing one means checking the other.
+//
+// Data below must be kept in sync with those pages' tables and fenced blocks
+// by hand — there's no automated extraction, since the numbers themselves are
+// hand-curated from `go test -bench` output.
 package main
 
 import (
@@ -38,13 +43,13 @@ type series struct {
 }
 
 // cpuCounts are the GOMAXPROCS values the CPU-limit sweep is measured at
-// (`make bench-cpu`), matching README.md's column headers there.
+// (`make bench-cpu`), matching benchmarks/README.md's column headers there.
 var cpuCounts = []float64{1, 2, 4, 8, 24}
 
 func formatCores(v float64) string { return fmt.Sprintf("%.0f", v) }
 
 // sizes are the working-set sizes every comparison table is measured at,
-// matching README.md's column headers.
+// matching benchmarks/README.md's column headers.
 var sizes = []float64{1000, 5000, 50000, 100000, 1000000}
 
 // seriesColor assigns each library a fixed hue for its identity, held
@@ -406,7 +411,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Core operations, single-threaded and parallel — from README.md
+	// Core operations, single-threaded and parallel — from benchmarks/README.md
 	// "Benchmarks" section (BenchmarkSet/SetMany/Get/GetMiss/
 	// ParallelGetSet/ParallelGet).
 	write(outDir, "core-ops.svg", renderBarChart("goache core operations (ns/op, lower is better)", "ns/op", []bar{
@@ -421,14 +426,14 @@ func main() {
 		{label: "Delete+Set churn", value: 85.54},
 	}))
 
-	// WithCapacity ingestion comparison — from README.md "Ingestion"
+	// WithCapacity ingestion comparison — from benchmarks/README.md "Ingestion"
 	// section (BenchmarkFreshLoad_NoHint / _WithCapacityHint).
 	write(outDir, "capacity-hint.svg", renderBarChart("Fresh 10k-entry bulk load (ns/op, lower is better)", "ns/op", []bar{
 		{label: "No hint", value: 1047438, highlight: false},
 		{label: "WithCapacity(10000)", value: 816126, highlight: true},
 	}))
 
-	// Optional TTL overhead — from README.md "Optional TTL" section
+	// Optional TTL overhead — from benchmarks/README.md "Optional TTL" section
 	// (BenchmarkSet/Get vs BenchmarkSetWithTTL/GetWithTTL). Shows the cost
 	// of TTL only on the path that actually uses it; the plain Set/Get
 	// bars are unaffected (see docs/adr/0012-entry-ttl-field-size-cost.md).
@@ -439,7 +444,7 @@ func main() {
 		{label: "SetWithTTL", value: 41.96},
 	}))
 
-	// Automatic eviction cost — from README.md "Automatic eviction" section
+	// Automatic eviction cost — from benchmarks/README.md "Automatic eviction" section
 	// (BenchmarkSet vs BenchmarkSetWithMaxSize/BenchmarkEvictionChurn).
 	// Shows the CLOCK eviction sweep's marginal cost on top of plain Set;
 	// see docs/adr/0016-clock-eviction.md.
@@ -449,7 +454,7 @@ func main() {
 		{label: "EvictionChurn (always evicts)", value: 115.0},
 	}))
 
-	// Deletion — from README.md "Deletion" section (BenchmarkDelete/
+	// Deletion — from benchmarks/README.md "Deletion" section (BenchmarkDelete/
 	// DeleteMany/DeleteSetChurn, see docs/adr/0019). Per-operation costs
 	// only. Clear is left out: at ~10.9ms it is five orders of magnitude
 	// away and would flatten every other bar to nothing, and the repeated
@@ -471,7 +476,7 @@ func main() {
 		{label: "DeleteMany after", value: 2014, highlight: true},
 	}))
 
-	// Cross-library comparison — from README.md "Comparison with other Go
+	// Cross-library comparison — from benchmarks/README.md "Comparison with other Go
 	// cache libraries" section (bench/compare_test.go), one chart per
 	// table. These are line charts rather than bars because the tables are
 	// size-parametrized (see docs/adr/0017-size-parametrized-benchmarks.md)
@@ -531,7 +536,7 @@ func main() {
 		{label: "ristretto", values: []float64{485.0, 471.8, 514.6, 537.1, 649.0}},
 	}))
 
-	// goache's own behaviour across core counts — from README.md's
+	// goache's own behaviour across core counts — from benchmarks/README.md's
 	// "Performance under a CPU limit" section (`make bench-cpu`). Get is
 	// included as the flat reference line: it is single-goroutine, so
 	// GOMAXPROCS does not move it, which is exactly what makes the
@@ -549,7 +554,7 @@ func main() {
 			{label: "Get (single-goroutine)", values: []float64{25.02, 24.93, 25.27, 24.16, 24.24}},
 		}))
 
-	// CPU-constrained comparison — from README.md's "Performance under a CPU
+	// CPU-constrained comparison — from benchmarks/README.md's "Performance under a CPU
 	// limit" section (`make bench-compare-cpu`). x is GOMAXPROCS, which is
 	// what a Kubernetes CPU limit actually controls under Go 1.25+: a pod
 	// with `limits.cpu: 100m` runs the leftmost column. See
@@ -574,7 +579,7 @@ func main() {
 		{label: "theine", values: []float64{199.4, 190.3, 184.8, 233.1, 347.5}},
 	}))
 
-	// Single-core mode against the whole competitor field — from README.md's
+	// Single-core mode against the whole competitor field — from benchmarks/README.md's
 	// "Single-core mode: NewSingleCore" section
 	// (`make bench-compare-singlecore`, -cpu=1). benchstat medians of a
 	// -count=10 run, not midpoints of a -count=3 range: at margins under ~15%
@@ -585,7 +590,7 @@ func main() {
 	// One pair per category: goache against whichever library came closest in
 	// that category, since "best competitor" is what the claim rests on and a
 	// seven-bar group per category would be unreadable. The full matrix is in
-	// README.md's table and in singlecore-field.svg below.
+	// benchmarks/README.md's table and in singlecore-field.svg below.
 	write(outDir, "singlecore-vs-field.svg", renderBarChart("Single core (GOMAXPROCS=1), 100,000 entries — vs best competitor per category (ns/op, lower is better)", "ns/op", []bar{
 		{label: "ParallelGet · NewSingleCore", value: 16.11, highlight: true},
 		{label: "ParallelGet · go-cache", value: 16.94},
@@ -605,10 +610,10 @@ func main() {
 		{label: "Delete · go-cache", value: 75.39},
 	}))
 
-	// The same run, all seven libraries — README.md's per-library table.
+	// The same run, all seven libraries — benchmarks/README.md's per-library table.
 	// Restricted to Get and Set: those two carry the whole spread (16 to 183
 	// ns/op already), and adding ristretto's Delete at 498.5 would flatten
-	// every read bar to a sliver. The other six categories are in README.md's
+	// every read bar to a sliver. The other six categories are in benchmarks/README.md's
 	// table with their own numbers.
 	write(outDir, "singlecore-field.svg", renderBarChart("Every library at one core, 100,000 entries (ns/op, lower is better)", "ns/op", []bar{
 		{label: "Get · NewSingleCore", value: 16.17, highlight: true},
@@ -628,7 +633,7 @@ func main() {
 	}))
 
 	// The one category where NewSingleCore loses at one core, and the size
-	// at which it stops losing — README.md's bounded-crossover table. A line
+	// at which it stops losing — benchmarks/README.md's bounded-crossover table. A line
 	// chart because the x axis really is a scale here (unlike the two bar
 	// charts above, whose x axis is a set of benchmark names), and the whole
 	// point is where the two curves cross. See
@@ -642,7 +647,7 @@ func main() {
 			{label: "New (sharded)", values: []float64{47.77, 60.85, 70.24, 85.36}},
 		}))
 
-	// Where a single-core Get's 16.35 ns goes — README.md's decomposition
+	// Where a single-core Get's 16.35 ns goes — benchmarks/README.md's decomposition
 	// block in the same section. Cumulative, not additive: each bar is a
 	// complete measured configuration that includes everything below it, so
 	// the differences between adjacent bars are the per-layer costs. The
@@ -661,7 +666,7 @@ func main() {
 	// SetManyRepeated/DeleteManyRepeated are per 100-key call, so putting
 	// either on this axis would flatten every other bar to nothing — the same
 	// reason Clear is left out of deletion-ops.svg above. The excluded rows
-	// are in README.md's table with their own numbers. benchstat medians of a
+	// are in benchmarks/README.md's table with their own numbers. benchstat medians of a
 	// -count=10 run; the -count=3 values this replaced understated the
 	// EvictionChurn* rows by roughly 10 percentage points (see
 	// docs/adr/0027-single-core-field-claim.md).

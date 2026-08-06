@@ -37,6 +37,7 @@ not re-attempted blind.
 | [0027](0027-single-core-field-claim.md) | Complete the single-core comparison matrix (8 categories × 7 libraries); read/delete budgets decomposed, no implementation change; `-count=10` + benchstat adopted | Accepted |
 | [0028](0028-runnable-examples-as-api-tests.md) | Runnable `Example*` with `// Output:` as the documented-API test; `examples/` directory of `main` packages rejected | Accepted |
 | [0029](0029-benchmark-selects-implementation-by-core-count.md) | `BenchmarkGoache_*` selects `NewSingleCore` at `GOMAXPROCS=1` and `New` above it; `Cacher`-routed selection rejected (dispatch inside the measured loop) | Accepted |
+| [0030](0030-split-benchmark-record-from-readme.md) | Full benchmark record moves to `benchmarks/README.md`; root README keeps three decision-relevant comparison tables and links out | Accepted |
 
 Adding a new decision: copy the format of an existing record, number it
 sequentially, and add a row here.
