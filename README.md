@@ -52,7 +52,7 @@ c2 := goache.New[string, int](goache.WithCapacity(10000))
 
 // Entries can optionally expire. Plain Set/Get never touch the clock —
 // only entries actually given a TTL pay for one, see Benchmarks below.
-c.SetWithTTL("session-token", "abc123", 5*time.Minute)
+c.SetWithTTL("request-count", 1, 5*time.Minute)
 
 c.SetMany([]goache.Entry[string, int]{
     {Key: "d", Value: 4, TTL: time.Minute}, // expires in a minute
@@ -98,6 +98,8 @@ if runtime.GOMAXPROCS(0) == 1 {
 ```
 
 `WithShardCount` is meaningless to `NewSingleCore` and ignored, so one shared `[]goache.Option` can be passed to either constructor. See [Single-core mode](#single-core-mode-newsinglecore) for the numbers and the crossover point.
+
+Every snippet above has a runnable counterpart in [`example_test.go`](example_test.go) — `ExampleNew`, `ExampleNew_withCapacity`, `ExampleNew_withMaxSize`, `ExampleCache_SetMany`, `ExampleCache_Purge`, `ExampleCache_DeleteMany`, `ExampleNewSingleCore`, `ExampleCacher` and two more. They run under `make test` and are checked against their `// Output:` comments, so a change that breaks a documented usage pattern fails CI instead of quietly rotting here and on pkg.go.dev.
 
 ## Architecture
 
