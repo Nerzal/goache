@@ -2,7 +2,20 @@
 
 ## Status
 
-Accepted
+Accepted. **The decision stands; the measurement in this record does not.**
+The go-cache comparison below was run at `-count=3` against four of the
+suite's eight categories, and
+[ADR 0027](0027-single-core-field-claim.md) re-ran the full matrix at
+`-count=10`. Two of this ADR's numbers do not survive that:
+
+- the read leads reported here as 20-25% are **4.9-6.5%** — go-cache's
+  `-count=3` figures were noise-inflated, not goache's;
+- `Delete` churn, unmeasured here against go-cache, is a **tie**.
+
+The write leads (-37% on `Set`, -48% on bounded `Set`) and the entire
+"against sharded `Cache`" table reproduced. Read ADR 0027's tables as the
+current numbers; read this record for why the type exists and what was
+rejected on the way.
 
 ## Context
 

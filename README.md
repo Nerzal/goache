@@ -8,13 +8,14 @@ goache is built for **concurrent, write-heavy caching where every write must lan
 
 **Reach for goache when:**
 
-- **Many goroutines hit the cache at once, *and the process has at least two cores*.** This is the case goache is built around: at 100,000 entries a concurrent `Get` costs **4.58 ns/op vs go-cache's 36.61**, an 8x difference that comes from sharding instead of one global lock. go-cache stays pinned near 37 ns/op at *every* size — its bottleneck was never cache size, only lock contention. Among the sharded libraries goache is fastest at every size but the smallest, where otter leads (3.26 vs 5.67 ns/op at 1,000 entries). The core-count condition is not a formality: on a single core sharding buys nothing, and `New` is the wrong constructor there — use [`NewSingleCore`](#single-core-mode-newsinglecore), which beats go-cache by 20-25% in that regime.
+- **Many goroutines hit the cache at once, *and the process has at least two cores*.** This is the case goache is built around: at 100,000 entries a concurrent `Get` costs **4.58 ns/op vs go-cache's 36.61**, an 8x difference that comes from sharding instead of one global lock. go-cache stays pinned near 37 ns/op at *every* size — its bottleneck was never cache size, only lock contention. Among the sharded libraries goache is fastest at every size but the smallest, where otter leads (3.26 vs 5.67 ns/op at 1,000 entries). The core-count condition is not a formality: on a single core sharding buys nothing, and `New` is the wrong constructor there — use [`NewSingleCore`](#single-core-mode-newsinglecore) instead.
 - **The workload writes as much as it reads.** goache leads plain `Set` at *every* size measured (32.63 ns/op at 100,000 entries; next best go-cache 39.11, then freecache 86.50, otter 137.6, theine 200.4, ristretto 287.4) and leads `SetWithTTL` at every size from 5,000 entries up (go-cache edges it by 0.9 ns/op at 1,000).
 - **A dropped write would be a bug.** Every `Set` is applied synchronously before it returns. ristretto — the fastest library here at very large bounded sizes — explicitly may discard writes under pressure; goache never does.
 - **You need a hard memory ceiling.** `WithMaxSize(n)` is an exact upper bound, not an approximation: the budget is split so per-shard limits sum to exactly n, and `Len()` can never exceed it ([docs/adr/0020](docs/adr/0020-shard-count-does-not-scale-eviction.md)).
 - **Bounded caches up to ~50,000 entries.** goache leads eviction cost through that range (47.52 / 61.31 / 69.12 ns/op at 1k / 5k / 50k). See the caveat below for larger bounds.
 - **Bulk writes against a live cache.** Repeated `SetMany`/`DeleteMany` are completely allocation-free ([docs/adr/0022](docs/adr/0022-bulk-bucket-scratch-reuse.md)).
 - **You want typed keys and values with no dependencies.** Full generics, no `interface{}` boxing, and goache's own module has zero external dependencies — the comparison libraries live in a [separate module](bench/) so they never reach your build.
+- **The process runs on exactly one core** — a Kubernetes pod at `limits.cpu: 1000m` or below, under Go 1.25+. Use [`NewSingleCore`](#single-core-mode-newsinglecore), not `New`. At 100,000 entries it is the fastest of the seven caches measured here in all eight benchmark categories, though the margin is honest about its shape: -37% to -48% on writes and bounded eviction, only -4.9% to -6.5% on reads, and a dead tie with go-cache on delete-then-reinsert churn.
 
 **Reach for something else when:**
 
@@ -260,61 +261,128 @@ Also visible: **freecache and theine are the wrong choice on constrained CPU spe
 
 `NewSingleCore` returns a second, unsharded implementation for exactly the regime above: one map behind one `sync.RWMutex`, no shard hash, no shard-slice indirection, and — unless `WithMaxSize` is set — entries that carry only a value and a deadline instead of the CLOCK bookkeeping `Cache` needs. It supports the same methods and the same options; `WithShardCount` is simply ignored.
 
-Run these with `make bench-compare-singlecore` (against other libraries) and `make bench-singlecore` (against `Cache`). All numbers below are at **`-cpu=1`**, 100,000-entry working set, AMD Ryzen AI 9 HX 370, Go 1.26.2 — each table from a single back-to-back run.
+Run these with `make bench-compare-singlecore` (against every other library) and `make bench-singlecore` (against `Cache`). All numbers below are at **`-cpu=1`**, 100,000-entry working set, AMD Ryzen AI 9 HX 370, Go 1.26.2.
 
-#### Against go-cache, the library it has to beat
+#### Against the whole field
 
-ns/op, `-count=3` range:
+Every benchmark category `NewSingleCore` has an equivalent for, against every library that has one. `-count=10`, summarized with `benchstat` (median ± range) — see [docs/adr/0027](docs/adr/0027-single-core-field-claim.md) for why `-count=3` is not enough to rank these.
 
-| Benchmark | `NewSingleCore` | go-cache | `New` (sharded) |
+| Benchmark | `NewSingleCore` | Best competitor | Lead |
 |---|---|---|---|
-| `Get` | **17.13-17.29** | 22.04-24.26 | 27.80-30.19 |
-| `Set` | **25.57-27.86** | 49.93-56.25 | 36.35-38.44 |
-| `ParallelGet` | **16.77-17.28** | 21.04-21.92 | 26.83-29.62 |
-| `ParallelGetSet` (90/10) | **18.00-18.46** | 23.35-23.65 | 28.81-33.64 |
+| `Bounded` (limit = n/2) | **54.84** ± 0% | ristretto 105.6 ± 6% | **-48%** |
+| `Set` | **23.90** ± 1% | go-cache 38.20 ± 3% | **-37%** |
+| `SetWithTTL` | **33.27** ± 1% | go-cache 52.56 ± 2% | **-37%** |
+| `ParallelGetSet` (90/10) | **17.14** ± 0% | go-cache 19.37 ± 1% | -11.5% |
+| `Get` | **16.17** ± 0% | go-cache 17.29 ± 2% | -6.5% |
+| `GetWithTTL` | **21.03** ± 0% | go-cache 22.41 ± 1% | -6.2% |
+| `ParallelGet` | **16.11** ± 1% | go-cache 16.94 ± 1% | -4.9% |
+| `Delete` (churn) | **75.11** ± 0% | go-cache 75.39 ± 1% | -0.4% (tie) |
 
-![Single-core comparison against go-cache](docs/img/singlecore-vs-gocache.svg)
+![Single-core comparison against the whole field](docs/img/singlecore-vs-field.svg)
 
-**`NewSingleCore` wins all four, by 20-25% on reads and 48% on `Set`** — go-cache boxes every value as `interface{}`, which also costs it one allocation per `Set` that goache never pays. Mixed read/write is the case that had no prior coverage in this suite at all (`BenchmarkGoCache_ParallelGetSet` was added for it), and it is where the single-lock design was most in question: one lock is not a liability when only one goroutine can run.
+**Fastest in all eight.** The full per-library numbers, including freecache, ristretto, theine and otter, are in the table below.
 
-These absolute figures sit above the previous section's for the same benchmarks because the machine was in a different state; the comparison holds because all three were measured in one run.
+Two caveats stated up front, because both go against goache:
+
+- **The read leads are thin.** 4.9-6.5% over go-cache on `Get`/`ParallelGet`/`GetWithTTL`. An earlier version of this section claimed 20-25%; that came from a `-count=3` run in which go-cache's numbers were noise-inflated, and it was wrong. The large leads are on writes (`Set`, `SetWithTTL`, `Bounded`), where go-cache boxes every value as `interface{}` and allocates — a structural difference no measurement noise creates.
+- **`Delete` is a tie, not a win.** 75.11 against 75.39 at ±0-1%. Delete-then-reinsert churn costs goache one extra map lookup that go-cache does not pay: pointer storage has to find the existing entry to recycle it, while go-cache stores its value inline and blindly overwrites. That lookup is worth about 9.6 ns here and about -2.9 ns on every single `Get`, which is the far more frequent operation. It is a deliberate trade, decomposed in [docs/adr/0027](docs/adr/0027-single-core-field-claim.md).
+
+#### Every library, every category, at one core
+
+ns/op, `-cpu=1`, n=100,000, `-count=10` benchstat medians. Lower is better; bold is the winner of each row.
+
+| Benchmark | `NewSingleCore` | `New` (sharded) | go-cache | freecache | ristretto | theine | otter |
+|---|---|---|---|---|---|---|---|
+| `Get` | **16.17** | 27.04 | 17.29 | 101.0 | 37.11 | 122.6 | 33.98 |
+| `ParallelGet` | **16.11** | 28.03 | 16.94 | 99.81 | 37.20 | 122.8 | 33.97 |
+| `ParallelGetSet` | **17.14** | 24.66 | 19.37 | 98.83 | 54.76 | 119.5 | 58.59 |
+| `GetWithTTL` | **21.03** | 29.80 | 22.41 | 101.0 | 38.38 | 118.3 | 51.79 |
+| `Set` | **23.90** | 36.63 | 38.20 | 82.98 | 148.8 | 98.56 | 183.3 |
+| `SetWithTTL` | **33.27** | 43.99 | 52.56 | 80.53 | 214.5 | 115.0 | 255.6 |
+| `Bounded` | **54.84** | 80.88 | — | — | 105.6 | 183.9 | 217.4 |
+| `Delete` | **75.11** | 110.6 | 75.39 | 188.3 | 498.5 | 282.9 | 241.3 |
+
+![Every library at one core](docs/img/singlecore-field.svg)
+
+go-cache and freecache have no `Bounded` row: go-cache has no eviction at all, and freecache bounds by byte-buffer size rather than entry count, so neither has a comparable "limit = n/2" mode.
+
+The two libraries whose authors document them as throughput leaders — theine and otter — are the slowest and third-slowest on reads here. That is not a contradiction of their claims: both are built for many-core parallel throughput, and their W-TinyLFU admission bookkeeping plus (for theine) a hierarchical timer wheel is per-operation cost that a single core pays in full and gets nothing back for. freecache pays the same way for keeping entries off the Go heap: every `Get` copies bytes out of a ring buffer and allocates (8 B/op, 1 alloc/op) where goache returns a value.
+
+#### One exception, and it is against `New`, not a competitor
+
+The table above is at 100,000 entries. Swept across sizes, seven of the eight categories keep their ranking. **`Bounded` does not**: below roughly 10,000 entries the sharded `Cache` evicts faster than `NewSingleCore` does, even on one core.
+
+| n (limit = n/2) | `NewSingleCore` | `New` (sharded) | |
+|---|---|---|---|
+| 1,000 | 50.60 ± 3% | **47.77** ± 1% | sharded -5.6% |
+| 5,000 | 67.50 ± 2% | **60.85** ± 2% | sharded -9.9% |
+| 50,000 | **52.53** ± 1% | 70.24 ± 1% | -25% |
+| 100,000 | **57.87** ± 2% | 85.36 ± 3% | -32% |
+
+![Bounded eviction crossover at one core](docs/img/singlecore-bounded-crossover.svg)
+
+Sharding is useless for locking at one core, but it still *partitions*: at `WithMaxSize(500)` the sharded cache splits that budget across 256 shards, so each one keeps a CLOCK ring of one or two nodes. `NewSingleCore` keeps a single ring of 500. Reproduced across three independent runs.
+
+**So: on one core, use `NewSingleCore` — unless you need `WithMaxSize` with a bound under ~10,000 entries, where `New` is faster.** Everything else on this page still points at `NewSingleCore`, including unbounded writes at every size measured.
+
+One oddity is left unexplained on purpose: `NewSingleCore`'s bounded cost is not monotonic in size — 5,000 entries costs more per operation than 50,000. That reproduces, so it is not noise, and pre-sizing the map does not remove it ([docs/adr/0027](docs/adr/0027-single-core-field-claim.md) records the refuted hypothesis).
+
+#### Where a `Get` actually goes, and why there is little left
+
+Decomposed against a 100,000-entry map at `-cpu=1`, `-count=10`:
+
+```
+key indexing + modulo (benchmark harness only)  0.7508 ns ± 1%
+bare map lookup, no synchronization              12.16 ns ± 1%
+  + sync.RWMutex RLock/RUnlock                   15.71 ns ± 1%   +3.55
+SingleCoreCache.Get                              16.35 ns ± 2%   +0.64
+```
+
+![Where a single-core Get's time goes](docs/img/singlecore-get-budget.svg)
+
+About 70% of a `Get` is Go's map lookup — a cost shared with every competitor that uses Go's map — 22% is the lock, and 4% is goache's own code. Two routes that look promising are measured shut:
+
+- **`sync.Mutex` is not cheaper than `sync.RWMutex`** at one core: 15.74 vs 15.71, indistinguishable.
+- **A hand-rolled reader scheme buys 0.35 ns.** A bare `atomic.Int32` reader counter with no writer-starvation handling — not a shippable design — lands at 15.36. `sync.RWMutex` is already within 2% of the floor any such scheme must pay in atomic read-modify-writes.
 
 #### Against `New`, benchmark by benchmark
 
+`-count=10`, benchstat medians, one run:
+
 | Benchmark | `New` | `NewSingleCore` | |
 |---|---|---|---|
-| `Get` | 25.20 | 16.39 | **-35%** |
-| `GetMiss` | 60.62 | 51.69 | -15% |
-| `Set` | 31.51 | 26.04 | -17% |
-| `GetWithTTL` | 29.93 | 21.68 | -28% |
-| `SetWithTTL` | 44.59 | 35.31 | -21% |
-| `SetMany` | 100.1 (2 allocs) | 58.79 (1 alloc) | **-41%** |
-| `SetManyRepeated` | 2513 | 919.8 | **-63%** |
-| `DeleteManyRepeated` | 1880 | 203.8 | **-89%** |
-| `DeleteSetChurn` | 91.16 | 78.35 | -14% |
-| `Purge` | 7.21 ms | 3.86 ms | **-47%** |
-| `Clear` | 12.90 ms / 23.0 MB | 9.28 ms / 8.6 MB | -28% / -63% |
-| `GetWithMaxSize` | 27.56 | 20.55 | -25% |
-| `SetWithMaxSize` | 85.60 | 58.43 | -32% |
-| `EvictionChurn` | 131.5 | 103.3 | -21% |
-| `EvictionChurnLarge` | 146.1 | 140.6 | -4% |
-| `EvictionChurnHot` | 142.8 | 131.3 | -8% |
-| `ParallelGet` | 24.46 | 16.25 | **-34%** |
-| `ParallelGetSet` | 27.14 | 17.70 | **-35%** |
-| `ParallelGetConstrained` | 24.42 | 16.20 | -34% |
-| `ParallelGetSetConstrained` | 26.73 | 18.37 | -31% |
+| `DeleteManyRepeated` | 1.975 µs | 205.2 ns | **-90%** |
+| `SetManyRepeated` | 2.404 µs | 907.6 ns | **-62%** |
+| `SetMany` | 98.11 (340 B, 2 allocs) | 57.91 (85 B, 1 alloc) | **-41%** |
+| `Purge` | 5.680 ms | 3.547 ms | **-38%** |
+| `ParallelGetSet` | 25.43 | 17.32 | **-32%** |
+| `Get` | 23.27 | 16.01 | **-31%** |
+| `ParallelGetConstrained` | 23.29 | 16.05 | -31% |
+| `ParallelGet` | 23.23 | 16.12 | -31% |
+| `Clear` | 12.41 ms / 21.9 MiB | 8.605 ms / 8.2 MiB | -31% / -63% |
+| `ParallelGetSetConstrained` | 25.43 | 17.93 | -30% |
+| `SetWithMaxSize` | 77.13 | 55.96 | -27% |
+| `GetWithMaxSize` | 26.52 | 19.27 | -27% |
+| `Set` | 31.59 | 23.71 | -25% |
+| `GetWithTTL` | 27.96 | 21.00 | -25% |
+| `EvictionChurn` | 133.7 | 103.3 | -23% |
+| `SetWithTTL` | 41.67 | 33.88 | -19% |
+| `GetMiss` | 59.54 | 50.65 | -15% |
+| `DeleteSetChurn` | 88.70 | 75.56 | -15% |
+| `EvictionChurnLarge` | 135.5 | 117.2 | -14% |
+| `EvictionChurnHot` | 135.0 | 116.8 | -14% |
 
 ![Single-core mode against the sharded cache](docs/img/singlecore-vs-sharded.svg)
 
-The two largest wins were not the predicted ones. `DeleteManyRepeated` (-89%) and `SetManyRepeated` (-63%) come from there being nothing to group: with one shard the whole bulk-grouping machinery [docs/adr/0022](docs/adr/0022-bulk-bucket-scratch-reuse.md) exists to amortize disappears rather than being amortized.
+The two largest wins were not the predicted ones. `DeleteManyRepeated` (-90%) and `SetManyRepeated` (-62%) come from there being nothing to group: with one shard the whole bulk-grouping machinery [docs/adr/0022](docs/adr/0022-bulk-bucket-scratch-reuse.md) exists to amortize disappears rather than being amortized.
 
-The `EvictionChurn*` rows answer the open question about putting the entire eviction budget in one CLOCK ring instead of 256. Even `EvictionChurnHot` — every reference bit pre-set, CLOCK's worst case — is *cheaper* here (131.3 vs 142.8), confirming [docs/adr/0023](docs/adr/0023-reject-clock-bitmap.md)'s finding that the sweep is not where bounded-cache cost lives.
+The `EvictionChurn*` rows answer the open question about putting the entire eviction budget in one CLOCK ring instead of 256. Even `EvictionChurnHot` — every reference bit pre-set, CLOCK's worst case — is *cheaper* here (116.8 vs 135.0), confirming [docs/adr/0023](docs/adr/0023-reject-clock-bitmap.md)'s finding that the sweep is not where bounded-cache cost lives. Note this row previously read -8% and `EvictionChurnLarge` -4%, both from a `-count=3` run; re-measured at `-count=10` they are -14%. The correction happens to go in goache's favor here, which is exactly why it was worth making — see [docs/adr/0027](docs/adr/0027-single-core-field-claim.md).
 
 #### The trade, stated plainly
 
 With two or more cores, `New` pulls ahead immediately and keeps improving as cores are added, while `NewSingleCore`'s one lock becomes the bottleneck — the same shape go-cache has in the table above. **If you declare single-core and then run on many cores, you get one global lock and you will feel it.** When in doubt, use `New`.
 
-Choosing at run time requires the `Cacher[K, V]` interface, whose dynamic dispatch is not free: measured at 24.45 → 26.58 ns/op (+8.7%) on `Get` through the interface versus the concrete type. That is exactly why `New` and `NewSingleCore` return concrete types — nobody pays it unless they ask for it. Full reasoning and the rejected alternatives are in [docs/adr/0026](docs/adr/0026-single-core-cache.md).
+Choosing at run time requires the `Cacher[K, V]` interface, whose dynamic dispatch is not free: measured at 23.40 → 25.46 ns/op (+8.8%) on `Get` through the interface versus the concrete type. That is exactly why `New` and `NewSingleCore` return concrete types — nobody pays it unless they ask for it. Full reasoning and the rejected alternatives are in [docs/adr/0026](docs/adr/0026-single-core-cache.md).
 
 ## Comparison with other Go cache libraries
 

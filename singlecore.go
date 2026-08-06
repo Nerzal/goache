@@ -30,12 +30,27 @@ import (
 //
 // SingleCoreCache drops all four. It is one map behind one sync.RWMutex, with
 // entries holding only what the configured feature set needs. Measured at
-// GOMAXPROCS=1 against a 100,000-entry working set, that is roughly 34%
-// faster than Cache on Get and about 10% faster than patrickmn/go-cache,
-// which Cache loses to in that regime. See
-// docs/adr/0026-single-core-cache.md and
-// docs/adr/0025-cpu-constrained-benchmarks.md for the numbers and the
-// crossover point.
+// GOMAXPROCS=1 against a 100,000-entry working set, it is the fastest of the
+// seven caches bench/ compares in all eight benchmark categories — but the
+// size of that lead varies enormously by category, and quoting one number
+// for it would be misleading:
+//
+//   - Writes win big: Set 23.90 vs go-cache's 38.20 ns/op (-37%), and
+//     bounded Set 54.84 vs ristretto's 105.6 (-48%). go-cache boxes every
+//     value as interface{} and allocates; goache does neither.
+//   - Reads win narrowly: Get 16.17 vs go-cache's 17.29 (-6.5%). About 70%
+//     of a Get is Go's own map lookup, which every competitor built on
+//     map[K]V pays identically.
+//   - Delete-then-reinsert churn is a tie (75.11 vs 75.39). Pointer storage
+//     must look a key up to recycle its entry where go-cache, storing values
+//     inline, blindly overwrites. That lookup costs ~9.6 ns here and saves
+//     ~2.9 ns on every Get — a deliberate trade, not an oversight.
+//
+// Against the sharded Cache at one core the margin is wider and more uniform
+// (-14% to -89%). See docs/adr/0027-single-core-field-claim.md for the full
+// matrix and the cost decompositions, docs/adr/0026-single-core-cache.md for
+// why this type exists, and docs/adr/0025-cpu-constrained-benchmarks.md for
+// the crossover point.
 //
 // The trade is exact and one-directional: with two or more cores available,
 // Cache pulls ahead immediately and keeps improving as cores are added,
