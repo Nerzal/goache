@@ -1,12 +1,18 @@
 # Plan: a dedicated single-core cache that beats go-cache at `GOMAXPROCS=1`
 
 Status: **executed.** Implemented as `SingleCoreCache`/`NewSingleCore`; the
-outcome, the final measurements and the decisions are recorded in
+outcome and the decisions are recorded in
 [ADR 0026](adr/0026-single-core-cache.md). All four pre-registered accept
-criteria were met, by 20-48% rather than the parity that was the bar. This
-document is kept as-written (pre-implementation) because it is the record of
-what was predicted before any code existed — including the two options that
-were built or priced and rejected.
+criteria were met — the bar was parity with go-cache and every one of them
+cleared it. This document is kept as-written (pre-implementation) because it
+is the record of what was predicted before any code existed — including the
+two options that were built or priced and rejected.
+
+**For the numbers, go to [ADR 0027](adr/0027-single-core-field-claim.md), not
+to ADR 0026.** ADR 0026 measured at `-count=3` against one competitor on
+half the suite; ADR 0027 re-ran the full eight-category matrix against all
+six at `-count=10` and corrected the read margins down from a reported
+20-25% to a measured 4.9-6.5%.
 
 ## Goal
 

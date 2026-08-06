@@ -1,76 +1,84 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="673" height="816" viewBox="0 0 673 816" font-family="Segoe UI, Helvetica, Arial, sans-serif">
-<rect width="673" height="816" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="673" height="900" viewBox="0 0 673 900" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="673" height="900" fill="#ffffff"/>
 <text x="223" y="24" font-size="16" font-weight="600" fill="#1f2933">NewSingleCore vs New at one core, per operation (ns/op, lower is better)</text>
 <line x1="223" y1="40" x2="223" y2="76" stroke="#cbd5e1" stroke-width="1"/>
-<text x="213" y="63" font-size="13" fill="#1f2933" text-anchor="end">ParallelGet · NewSingleCore</text>
-<rect x="223" y="44" width="53.6" height="28" rx="3" fill="#059669"/>
-<text x="284.6" y="63" font-size="13" fill="#1f2933">16.25 ns/op</text>
+<text x="213" y="63" font-size="13" fill="#1f2933" text-anchor="end">Get · NewSingleCore</text>
+<rect x="223" y="44" width="39.5" height="28" rx="3" fill="#059669"/>
+<text x="270.5" y="63" font-size="13" fill="#1f2933">16.01 ns/op</text>
 <line x1="223" y1="82" x2="223" y2="118" stroke="#cbd5e1" stroke-width="1"/>
-<text x="213" y="105" font-size="13" fill="#1f2933" text-anchor="end">Get · NewSingleCore</text>
-<rect x="223" y="86" width="54.0" height="28" rx="3" fill="#059669"/>
-<text x="285.0" y="105" font-size="13" fill="#1f2933">16.39 ns/op</text>
+<text x="213" y="105" font-size="13" fill="#1f2933" text-anchor="end">ParallelGet · NewSingleCore</text>
+<rect x="223" y="86" width="39.8" height="28" rx="3" fill="#059669"/>
+<text x="270.8" y="105" font-size="13" fill="#1f2933">16.12 ns/op</text>
 <line x1="223" y1="124" x2="223" y2="160" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="147" font-size="13" fill="#1f2933" text-anchor="end">ParallelGetSet · NewSingleCore</text>
-<rect x="223" y="128" width="58.4" height="28" rx="3" fill="#059669"/>
-<text x="289.4" y="147" font-size="13" fill="#1f2933">17.70 ns/op</text>
+<rect x="223" y="128" width="42.7" height="28" rx="3" fill="#059669"/>
+<text x="273.7" y="147" font-size="13" fill="#1f2933">17.32 ns/op</text>
 <line x1="223" y1="166" x2="223" y2="202" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="189" font-size="13" fill="#1f2933" text-anchor="end">GetWithMaxSize · NewSingleCore</text>
-<rect x="223" y="170" width="67.7" height="28" rx="3" fill="#059669"/>
-<text x="298.7" y="189" font-size="13" fill="#1f2933">20.55 ns/op</text>
+<rect x="223" y="170" width="47.6" height="28" rx="3" fill="#059669"/>
+<text x="278.6" y="189" font-size="13" fill="#1f2933">19.27 ns/op</text>
 <line x1="223" y1="208" x2="223" y2="244" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="231" font-size="13" fill="#1f2933" text-anchor="end">GetWithTTL · NewSingleCore</text>
-<rect x="223" y="212" width="71.5" height="28" rx="3" fill="#059669"/>
-<text x="302.5" y="231" font-size="13" fill="#1f2933">21.68 ns/op</text>
+<rect x="223" y="212" width="51.8" height="28" rx="3" fill="#059669"/>
+<text x="282.8" y="231" font-size="13" fill="#1f2933">21.00 ns/op</text>
 <line x1="223" y1="250" x2="223" y2="286" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="273" font-size="13" fill="#1f2933" text-anchor="end">ParallelGet · New</text>
-<rect x="223" y="254" width="80.6" height="28" rx="3" fill="#2563eb"/>
-<text x="311.6" y="273" font-size="13" fill="#1f2933">24.46 ns/op</text>
+<rect x="223" y="254" width="57.3" height="28" rx="3" fill="#2563eb"/>
+<text x="288.3" y="273" font-size="13" fill="#1f2933">23.23 ns/op</text>
 <line x1="223" y1="292" x2="223" y2="328" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="315" font-size="13" fill="#1f2933" text-anchor="end">Get · New</text>
-<rect x="223" y="296" width="83.1" height="28" rx="3" fill="#2563eb"/>
-<text x="314.1" y="315" font-size="13" fill="#1f2933">25.20 ns/op</text>
+<rect x="223" y="296" width="57.4" height="28" rx="3" fill="#2563eb"/>
+<text x="288.4" y="315" font-size="13" fill="#1f2933">23.27 ns/op</text>
 <line x1="223" y1="334" x2="223" y2="370" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="357" font-size="13" fill="#1f2933" text-anchor="end">Set · NewSingleCore</text>
-<rect x="223" y="338" width="85.8" height="28" rx="3" fill="#059669"/>
-<text x="316.8" y="357" font-size="13" fill="#1f2933">26.04 ns/op</text>
+<rect x="223" y="338" width="58.5" height="28" rx="3" fill="#059669"/>
+<text x="289.5" y="357" font-size="13" fill="#1f2933">23.71 ns/op</text>
 <line x1="223" y1="376" x2="223" y2="412" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="399" font-size="13" fill="#1f2933" text-anchor="end">ParallelGetSet · New</text>
-<rect x="223" y="380" width="89.5" height="28" rx="3" fill="#2563eb"/>
-<text x="320.5" y="399" font-size="13" fill="#1f2933">27.14 ns/op</text>
+<rect x="223" y="380" width="62.8" height="28" rx="3" fill="#2563eb"/>
+<text x="293.8" y="399" font-size="13" fill="#1f2933">25.43 ns/op</text>
 <line x1="223" y1="418" x2="223" y2="454" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="441" font-size="13" fill="#1f2933" text-anchor="end">GetWithMaxSize · New</text>
-<rect x="223" y="422" width="90.9" height="28" rx="3" fill="#2563eb"/>
-<text x="321.9" y="441" font-size="13" fill="#1f2933">27.56 ns/op</text>
+<rect x="223" y="422" width="65.5" height="28" rx="3" fill="#2563eb"/>
+<text x="296.5" y="441" font-size="13" fill="#1f2933">26.52 ns/op</text>
 <line x1="223" y1="460" x2="223" y2="496" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="483" font-size="13" fill="#1f2933" text-anchor="end">GetWithTTL · New</text>
-<rect x="223" y="464" width="98.7" height="28" rx="3" fill="#2563eb"/>
-<text x="329.7" y="483" font-size="13" fill="#1f2933">29.93 ns/op</text>
+<rect x="223" y="464" width="69.0" height="28" rx="3" fill="#2563eb"/>
+<text x="300.0" y="483" font-size="13" fill="#1f2933">27.96 ns/op</text>
 <line x1="223" y1="502" x2="223" y2="538" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="525" font-size="13" fill="#1f2933" text-anchor="end">Set · New</text>
-<rect x="223" y="506" width="103.9" height="28" rx="3" fill="#2563eb"/>
-<text x="334.9" y="525" font-size="13" fill="#1f2933">31.51 ns/op</text>
+<rect x="223" y="506" width="78.0" height="28" rx="3" fill="#2563eb"/>
+<text x="309.0" y="525" font-size="13" fill="#1f2933">31.59 ns/op</text>
 <line x1="223" y1="544" x2="223" y2="580" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="567" font-size="13" fill="#1f2933" text-anchor="end">SetWithTTL · NewSingleCore</text>
-<rect x="223" y="548" width="116.4" height="28" rx="3" fill="#059669"/>
-<text x="347.4" y="567" font-size="13" fill="#1f2933">35.31 ns/op</text>
+<rect x="223" y="548" width="83.6" height="28" rx="3" fill="#059669"/>
+<text x="314.6" y="567" font-size="13" fill="#1f2933">33.88 ns/op</text>
 <line x1="223" y1="586" x2="223" y2="622" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="609" font-size="13" fill="#1f2933" text-anchor="end">SetWithTTL · New</text>
-<rect x="223" y="590" width="147.0" height="28" rx="3" fill="#2563eb"/>
-<text x="378.0" y="609" font-size="13" fill="#1f2933">44.59 ns/op</text>
+<rect x="223" y="590" width="102.9" height="28" rx="3" fill="#2563eb"/>
+<text x="333.9" y="609" font-size="13" fill="#1f2933">41.67 ns/op</text>
 <line x1="223" y1="628" x2="223" y2="664" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="651" font-size="13" fill="#1f2933" text-anchor="end">SetWithMaxSize · NewSingleCore</text>
-<rect x="223" y="632" width="192.6" height="28" rx="3" fill="#059669"/>
-<text x="423.6" y="651" font-size="13" fill="#1f2933">58.43 ns/op</text>
+<rect x="223" y="632" width="138.1" height="28" rx="3" fill="#059669"/>
+<text x="369.1" y="651" font-size="13" fill="#1f2933">55.96 ns/op</text>
 <line x1="223" y1="670" x2="223" y2="706" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="693" font-size="13" fill="#1f2933" text-anchor="end">SetMany · NewSingleCore</text>
-<rect x="223" y="674" width="193.8" height="28" rx="3" fill="#059669"/>
-<text x="424.8" y="693" font-size="13" fill="#1f2933">58.79 ns/op</text>
+<rect x="223" y="674" width="142.9" height="28" rx="3" fill="#059669"/>
+<text x="373.9" y="693" font-size="13" fill="#1f2933">57.91 ns/op</text>
 <line x1="223" y1="712" x2="223" y2="748" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="735" font-size="13" fill="#1f2933" text-anchor="end">SetWithMaxSize · New</text>
-<rect x="223" y="716" width="282.2" height="28" rx="3" fill="#2563eb"/>
-<text x="513.2" y="735" font-size="13" fill="#1f2933">85.60 ns/op</text>
+<rect x="223" y="716" width="190.4" height="28" rx="3" fill="#2563eb"/>
+<text x="421.4" y="735" font-size="13" fill="#1f2933">77.13 ns/op</text>
 <line x1="223" y1="754" x2="223" y2="790" stroke="#cbd5e1" stroke-width="1"/>
 <text x="213" y="777" font-size="13" fill="#1f2933" text-anchor="end">SetMany · New</text>
-<rect x="223" y="758" width="330.0" height="28" rx="3" fill="#2563eb"/>
-<text x="561.0" y="777" font-size="13" fill="#1f2933">100.10 ns/op</text>
+<rect x="223" y="758" width="242.2" height="28" rx="3" fill="#2563eb"/>
+<text x="473.2" y="777" font-size="13" fill="#1f2933">98.11 ns/op</text>
+<line x1="223" y1="796" x2="223" y2="832" stroke="#cbd5e1" stroke-width="1"/>
+<text x="213" y="819" font-size="13" fill="#1f2933" text-anchor="end">EvictionChurn · NewSingleCore</text>
+<rect x="223" y="800" width="255.0" height="28" rx="3" fill="#059669"/>
+<text x="486.0" y="819" font-size="13" fill="#1f2933">103.30 ns/op</text>
+<line x1="223" y1="838" x2="223" y2="874" stroke="#cbd5e1" stroke-width="1"/>
+<text x="213" y="861" font-size="13" fill="#1f2933" text-anchor="end">EvictionChurn · New</text>
+<rect x="223" y="842" width="330.0" height="28" rx="3" fill="#2563eb"/>
+<text x="561.0" y="861" font-size="13" fill="#1f2933">133.70 ns/op</text>
 </svg>

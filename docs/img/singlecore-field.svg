@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="648" viewBox="0 0 640 648" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="640" height="648" fill="#ffffff"/>
+<text x="190" y="24" font-size="16" font-weight="600" fill="#1f2933">Every library at one core, 100,000 entries (ns/op, lower is better)</text>
+<line x1="190" y1="40" x2="190" y2="76" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="63" font-size="13" fill="#1f2933" text-anchor="end">Get · NewSingleCore</text>
+<rect x="190" y="44" width="29.1" height="28" rx="3" fill="#059669"/>
+<text x="227.1" y="63" font-size="13" fill="#1f2933">16.17 ns/op</text>
+<line x1="190" y1="82" x2="190" y2="118" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="105" font-size="13" fill="#1f2933" text-anchor="end">Get · go-cache</text>
+<rect x="190" y="86" width="31.1" height="28" rx="3" fill="#2563eb"/>
+<text x="229.1" y="105" font-size="13" fill="#1f2933">17.29 ns/op</text>
+<line x1="190" y1="124" x2="190" y2="160" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="147" font-size="13" fill="#1f2933" text-anchor="end">Set · NewSingleCore</text>
+<rect x="190" y="128" width="43.0" height="28" rx="3" fill="#059669"/>
+<text x="241.0" y="147" font-size="13" fill="#1f2933">23.90 ns/op</text>
+<line x1="190" y1="166" x2="190" y2="202" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="189" font-size="13" fill="#1f2933" text-anchor="end">Get · New (sharded)</text>
+<rect x="190" y="170" width="48.7" height="28" rx="3" fill="#2563eb"/>
+<text x="246.7" y="189" font-size="13" fill="#1f2933">27.04 ns/op</text>
+<line x1="190" y1="208" x2="190" y2="244" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="231" font-size="13" fill="#1f2933" text-anchor="end">Get · otter</text>
+<rect x="190" y="212" width="61.2" height="28" rx="3" fill="#2563eb"/>
+<text x="259.2" y="231" font-size="13" fill="#1f2933">33.98 ns/op</text>
+<line x1="190" y1="250" x2="190" y2="286" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="273" font-size="13" fill="#1f2933" text-anchor="end">Set · New (sharded)</text>
+<rect x="190" y="254" width="65.9" height="28" rx="3" fill="#2563eb"/>
+<text x="263.9" y="273" font-size="13" fill="#1f2933">36.63 ns/op</text>
+<line x1="190" y1="292" x2="190" y2="328" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="315" font-size="13" fill="#1f2933" text-anchor="end">Get · ristretto</text>
+<rect x="190" y="296" width="66.8" height="28" rx="3" fill="#2563eb"/>
+<text x="264.8" y="315" font-size="13" fill="#1f2933">37.11 ns/op</text>
+<line x1="190" y1="334" x2="190" y2="370" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="357" font-size="13" fill="#1f2933" text-anchor="end">Set · go-cache</text>
+<rect x="190" y="338" width="68.8" height="28" rx="3" fill="#2563eb"/>
+<text x="266.8" y="357" font-size="13" fill="#1f2933">38.20 ns/op</text>
+<line x1="190" y1="376" x2="190" y2="412" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="399" font-size="13" fill="#1f2933" text-anchor="end">Set · freecache</text>
+<rect x="190" y="380" width="149.4" height="28" rx="3" fill="#2563eb"/>
+<text x="347.4" y="399" font-size="13" fill="#1f2933">82.98 ns/op</text>
+<line x1="190" y1="418" x2="190" y2="454" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="441" font-size="13" fill="#1f2933" text-anchor="end">Set · theine</text>
+<rect x="190" y="422" width="177.4" height="28" rx="3" fill="#2563eb"/>
+<text x="375.4" y="441" font-size="13" fill="#1f2933">98.56 ns/op</text>
+<line x1="190" y1="460" x2="190" y2="496" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="483" font-size="13" fill="#1f2933" text-anchor="end">Get · freecache</text>
+<rect x="190" y="464" width="181.8" height="28" rx="3" fill="#2563eb"/>
+<text x="379.8" y="483" font-size="13" fill="#1f2933">101.00 ns/op</text>
+<line x1="190" y1="502" x2="190" y2="538" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="525" font-size="13" fill="#1f2933" text-anchor="end">Get · theine</text>
+<rect x="190" y="506" width="220.7" height="28" rx="3" fill="#2563eb"/>
+<text x="418.7" y="525" font-size="13" fill="#1f2933">122.60 ns/op</text>
+<line x1="190" y1="544" x2="190" y2="580" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="567" font-size="13" fill="#1f2933" text-anchor="end">Set · ristretto</text>
+<rect x="190" y="548" width="267.9" height="28" rx="3" fill="#2563eb"/>
+<text x="465.9" y="567" font-size="13" fill="#1f2933">148.80 ns/op</text>
+<line x1="190" y1="586" x2="190" y2="622" stroke="#cbd5e1" stroke-width="1"/>
+<text x="180" y="609" font-size="13" fill="#1f2933" text-anchor="end">Set · otter</text>
+<rect x="190" y="590" width="330.0" height="28" rx="3" fill="#2563eb"/>
+<text x="528.0" y="609" font-size="13" fill="#1f2933">183.30 ns/op</text>
+</svg>

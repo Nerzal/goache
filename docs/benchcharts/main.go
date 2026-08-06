@@ -574,25 +574,85 @@ func main() {
 		{label: "theine", values: []float64{199.4, 190.3, 184.8, 233.1, 347.5}},
 	}))
 
-	// Single-core mode against the library it has to beat — from README.md's
+	// Single-core mode against the whole competitor field — from README.md's
 	// "Single-core mode: NewSingleCore" section
-	// (`make bench-compare-singlecore`, -cpu=1). Midpoints of the -count=3
-	// ranges printed in that table. A bar chart rather than a line chart
-	// because the x axis here is a set of benchmarks, not a scale. See
-	// docs/adr/0026-single-core-cache.md.
-	write(outDir, "singlecore-vs-gocache.svg", renderBarChart("Single core (GOMAXPROCS=1), 100,000 entries (ns/op, lower is better)", "ns/op", []bar{
-		{label: "Get · NewSingleCore", value: 17.21, highlight: true},
-		{label: "Get · go-cache", value: 23.15},
-		{label: "Get · New (sharded)", value: 29.00},
-		{label: "Set · NewSingleCore", value: 26.72, highlight: true},
-		{label: "Set · go-cache", value: 53.09},
-		{label: "Set · New (sharded)", value: 37.40},
-		{label: "ParallelGet · NewSingleCore", value: 17.03, highlight: true},
-		{label: "ParallelGet · go-cache", value: 21.48},
-		{label: "ParallelGet · New (sharded)", value: 28.23},
-		{label: "ParallelGetSet · NewSingleCore", value: 18.23, highlight: true},
-		{label: "ParallelGetSet · go-cache", value: 23.50},
-		{label: "ParallelGetSet · New (sharded)", value: 31.23},
+	// (`make bench-compare-singlecore`, -cpu=1). benchstat medians of a
+	// -count=10 run, not midpoints of a -count=3 range: at margins under ~15%
+	// a three-sample run ranks the wrong library, which is what this chart's
+	// predecessor (singlecore-vs-gocache.svg) did. See
+	// docs/adr/0027-single-core-field-claim.md.
+	//
+	// One pair per category: goache against whichever library came closest in
+	// that category, since "best competitor" is what the claim rests on and a
+	// seven-bar group per category would be unreadable. The full matrix is in
+	// README.md's table and in singlecore-field.svg below.
+	write(outDir, "singlecore-vs-field.svg", renderBarChart("Single core (GOMAXPROCS=1), 100,000 entries — vs best competitor per category (ns/op, lower is better)", "ns/op", []bar{
+		{label: "ParallelGet · NewSingleCore", value: 16.11, highlight: true},
+		{label: "ParallelGet · go-cache", value: 16.94},
+		{label: "Get · NewSingleCore", value: 16.17, highlight: true},
+		{label: "Get · go-cache", value: 17.29},
+		{label: "ParallelGetSet · NewSingleCore", value: 17.14, highlight: true},
+		{label: "ParallelGetSet · go-cache", value: 19.37},
+		{label: "GetWithTTL · NewSingleCore", value: 21.03, highlight: true},
+		{label: "GetWithTTL · go-cache", value: 22.41},
+		{label: "Set · NewSingleCore", value: 23.90, highlight: true},
+		{label: "Set · go-cache", value: 38.20},
+		{label: "SetWithTTL · NewSingleCore", value: 33.27, highlight: true},
+		{label: "SetWithTTL · go-cache", value: 52.56},
+		{label: "Bounded · NewSingleCore", value: 54.84, highlight: true},
+		{label: "Bounded · ristretto", value: 105.6},
+		{label: "Delete · NewSingleCore", value: 75.11, highlight: true},
+		{label: "Delete · go-cache", value: 75.39},
+	}))
+
+	// The same run, all seven libraries — README.md's per-library table.
+	// Restricted to Get and Set: those two carry the whole spread (16 to 183
+	// ns/op already), and adding ristretto's Delete at 498.5 would flatten
+	// every read bar to a sliver. The other six categories are in README.md's
+	// table with their own numbers.
+	write(outDir, "singlecore-field.svg", renderBarChart("Every library at one core, 100,000 entries (ns/op, lower is better)", "ns/op", []bar{
+		{label: "Get · NewSingleCore", value: 16.17, highlight: true},
+		{label: "Get · go-cache", value: 17.29},
+		{label: "Get · New (sharded)", value: 27.04},
+		{label: "Get · otter", value: 33.98},
+		{label: "Get · ristretto", value: 37.11},
+		{label: "Get · freecache", value: 101.0},
+		{label: "Get · theine", value: 122.6},
+		{label: "Set · NewSingleCore", value: 23.90, highlight: true},
+		{label: "Set · New (sharded)", value: 36.63},
+		{label: "Set · go-cache", value: 38.20},
+		{label: "Set · freecache", value: 82.98},
+		{label: "Set · theine", value: 98.56},
+		{label: "Set · ristretto", value: 148.8},
+		{label: "Set · otter", value: 183.3},
+	}))
+
+	// The one category where NewSingleCore loses at one core, and the size
+	// at which it stops losing — README.md's bounded-crossover table. A line
+	// chart because the x axis really is a scale here (unlike the two bar
+	// charts above, whose x axis is a set of benchmark names), and the whole
+	// point is where the two curves cross. See
+	// docs/adr/0027-single-core-field-claim.md.
+	write(outDir, "singlecore-bounded-crossover.svg", renderLineChart(
+		"Bounded Set at one core, limit = n/2 (ns/op, lower is better)",
+		"ns/op", "entries",
+		[]float64{1000, 5000, 50000, 100000}, formatSize,
+		[]series{
+			{label: "NewSingleCore", values: []float64{50.60, 67.50, 52.53, 57.87}},
+			{label: "New (sharded)", values: []float64{47.77, 60.85, 70.24, 85.36}},
+		}))
+
+	// Where a single-core Get's 16.35 ns goes — README.md's decomposition
+	// block in the same section. Cumulative, not additive: each bar is a
+	// complete measured configuration that includes everything below it, so
+	// the differences between adjacent bars are the per-layer costs. The
+	// probe behind it is recorded in docs/adr/0027-single-core-field-claim.md
+	// rather than kept in the repo.
+	write(outDir, "singlecore-get-budget.svg", renderBarChart("Cost of one single-core Get, by layer (ns/op, cumulative)", "ns/op", []bar{
+		{label: "benchmark harness only", value: 0.7508},
+		{label: "+ Go map lookup", value: 12.16},
+		{label: "+ sync.RWMutex", value: 15.71},
+		{label: "SingleCoreCache.Get", value: 16.35, highlight: true},
 	}))
 
 	// Single-core mode against the sharded Cache, benchmark by benchmark —
@@ -601,25 +661,30 @@ func main() {
 	// SetManyRepeated/DeleteManyRepeated are per 100-key call, so putting
 	// either on this axis would flatten every other bar to nothing — the same
 	// reason Clear is left out of deletion-ops.svg above. The excluded rows
-	// are in README.md's table with their own numbers.
+	// are in README.md's table with their own numbers. benchstat medians of a
+	// -count=10 run; the -count=3 values this replaced understated the
+	// EvictionChurn* rows by roughly 10 percentage points (see
+	// docs/adr/0027-single-core-field-claim.md).
 	write(outDir, "singlecore-vs-sharded.svg", renderBarChart("NewSingleCore vs New at one core, per operation (ns/op, lower is better)", "ns/op", []bar{
-		{label: "Get · NewSingleCore", value: 16.39, highlight: true},
-		{label: "Get · New", value: 25.20},
-		{label: "ParallelGet · NewSingleCore", value: 16.25, highlight: true},
-		{label: "ParallelGet · New", value: 24.46},
-		{label: "ParallelGetSet · NewSingleCore", value: 17.70, highlight: true},
-		{label: "ParallelGetSet · New", value: 27.14},
-		{label: "GetWithMaxSize · NewSingleCore", value: 20.55, highlight: true},
-		{label: "GetWithMaxSize · New", value: 27.56},
-		{label: "GetWithTTL · NewSingleCore", value: 21.68, highlight: true},
-		{label: "GetWithTTL · New", value: 29.93},
-		{label: "Set · NewSingleCore", value: 26.04, highlight: true},
-		{label: "Set · New", value: 31.51},
-		{label: "SetWithTTL · NewSingleCore", value: 35.31, highlight: true},
-		{label: "SetWithTTL · New", value: 44.59},
-		{label: "SetWithMaxSize · NewSingleCore", value: 58.43, highlight: true},
-		{label: "SetWithMaxSize · New", value: 85.60},
-		{label: "SetMany · NewSingleCore", value: 58.79, highlight: true},
-		{label: "SetMany · New", value: 100.1},
+		{label: "Get · NewSingleCore", value: 16.01, highlight: true},
+		{label: "Get · New", value: 23.27},
+		{label: "ParallelGet · NewSingleCore", value: 16.12, highlight: true},
+		{label: "ParallelGet · New", value: 23.23},
+		{label: "ParallelGetSet · NewSingleCore", value: 17.32, highlight: true},
+		{label: "ParallelGetSet · New", value: 25.43},
+		{label: "GetWithMaxSize · NewSingleCore", value: 19.27, highlight: true},
+		{label: "GetWithMaxSize · New", value: 26.52},
+		{label: "GetWithTTL · NewSingleCore", value: 21.00, highlight: true},
+		{label: "GetWithTTL · New", value: 27.96},
+		{label: "Set · NewSingleCore", value: 23.71, highlight: true},
+		{label: "Set · New", value: 31.59},
+		{label: "SetWithTTL · NewSingleCore", value: 33.88, highlight: true},
+		{label: "SetWithTTL · New", value: 41.67},
+		{label: "SetWithMaxSize · NewSingleCore", value: 55.96, highlight: true},
+		{label: "SetWithMaxSize · New", value: 77.13},
+		{label: "SetMany · NewSingleCore", value: 57.91, highlight: true},
+		{label: "SetMany · New", value: 98.11},
+		{label: "EvictionChurn · NewSingleCore", value: 103.3, highlight: true},
+		{label: "EvictionChurn · New", value: 133.7},
 	}))
 }
