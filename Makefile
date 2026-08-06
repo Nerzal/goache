@@ -1,4 +1,4 @@
-.PHONY: build test test-race bench bench-cpu bench-singlecore bench-compare bench-compare-cpu bench-compare-singlecore bench-compare-singlecore-sizes vet fmt fmt-check lint tidy charts ci clean
+.PHONY: build test test-race bench bench-cpu bench-singlecore bench-singlecore-vs-sharded bench-compare bench-compare-cpu bench-compare-singlecore bench-compare-singlecore-sizes vet fmt fmt-check lint tidy charts ci clean
 
 build:
 	go build ./...
@@ -35,8 +35,19 @@ bench-singlecore:
 # Deliberately not filtered down to goache vs go-cache — "fastest single-core
 # cache" is a claim about the field, and ristretto/theine/otter are the ones
 # that could refute it. See docs/adr/0027.
+#
+# BenchmarkGoache_* selects SingleCoreCache at -cpu=1 (see docs/adr/0029), so
+# the goache rows here are already the implementation a single-core caller
+# should be running. BenchmarkGoacheSharded_* is the other side of that.
 bench-compare-singlecore:
 	cd bench && go test -bench='.*/n=100000$$' -benchmem -run=^$$ -cpu=1 ./...
+
+# The two goache implementations head to head at one core. BenchmarkGoache_*
+# cannot serve this — at -cpu=1 it selects SingleCoreCache and would be
+# comparing that against itself — so both forced entry points are used instead.
+# This is where the bounded-under-10k exception in docs/adr/0027 shows up.
+bench-singlecore-vs-sharded:
+	cd bench && go test -bench='GoacheS(ingleCore|harded)_' -benchmem -run=^$$ -cpu=1 ./...
 
 # The same field swept across every working-set size, to catch a competitor
 # that only wins at one end of the curve (freecache keeps entries off the Go

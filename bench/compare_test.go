@@ -66,6 +66,7 @@ package bench
 import (
 	"encoding/binary"
 	"fmt"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -110,8 +111,38 @@ func encodeInt(v int) []byte {
 }
 
 // --- goache ---
+//
+// "goache" is a library, not a data structure: New returns the sharded Cache
+// and NewSingleCore returns SingleCoreCache, and which one a caller should
+// reach for is decided by the core count the process actually has (see the
+// package doc comment on singlecore.go, and ADR 0025 for where the crossover
+// sits). The benchmarks below therefore select the same way a caller would —
+// singleCore() picks SingleCoreCache at GOMAXPROCS=1 and Cache above it.
+//
+// Measuring the sharded Cache at -cpu=1 and publishing that as "goache" would
+// report a number no informed caller would ever pay: sharding cannot help when
+// there is no second thread to spread across shard mutexes, so it prices the
+// routing hash and the shard indirection with none of the contention relief
+// they exist to buy. The competitors are not handicapped that way — go-cache
+// has exactly one implementation and it is the same one at every core count.
+//
+// BenchmarkGoacheSingleCore_* further down forces SingleCoreCache regardless
+// of core count, which is what makes the losing side of the trade visible.
 
-func BenchmarkGoache_Set(b *testing.B) {
+// singleCore reports whether the process is limited to a single core, which is
+// what Go 1.25+ derives from a cgroup CPU quota — a Kubernetes pod at
+// limits.cpu: 1000m or below runs at GOMAXPROCS=1.
+//
+// Called from benchmark entry points before any timing starts, so it costs
+// nothing that lands in a measurement.
+func singleCore() bool {
+	return runtime.GOMAXPROCS(0) == 1
+}
+
+// The sharded workload bodies. Shared with BenchmarkGoacheSharded_* below,
+// which forces this implementation at any core count.
+
+func benchShardedSet(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.New[string, int]()
 		keys := benchKeys(n)
@@ -124,7 +155,7 @@ func BenchmarkGoache_Set(b *testing.B) {
 	})
 }
 
-func BenchmarkGoache_Get(b *testing.B) {
+func benchShardedGet(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.New[string, int]()
 		keys := benchKeys(n)
@@ -140,7 +171,7 @@ func BenchmarkGoache_Get(b *testing.B) {
 	})
 }
 
-func BenchmarkGoache_ParallelGet(b *testing.B) {
+func benchShardedParallelGet(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.New[string, int]()
 		keys := benchKeys(n)
@@ -159,7 +190,31 @@ func BenchmarkGoache_ParallelGet(b *testing.B) {
 	})
 }
 
-func BenchmarkGoache_SetWithTTL(b *testing.B) {
+func benchShardedParallelGetSet(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := goache.New[string, int]()
+		keys := benchKeys(n)
+		for i, k := range keys {
+			c.Set(k, i)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				k := keys[i%n]
+				if i%10 == 0 {
+					c.Set(k, i)
+				} else {
+					c.Get(k)
+				}
+				i++
+			}
+		})
+	})
+}
+
+func benchShardedSetWithTTL(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.New[string, int]()
 		keys := benchKeys(n)
@@ -172,7 +227,7 @@ func BenchmarkGoache_SetWithTTL(b *testing.B) {
 	})
 }
 
-func BenchmarkGoache_GetWithTTL(b *testing.B) {
+func benchShardedGetWithTTL(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.New[string, int]()
 		keys := benchKeys(n)
@@ -188,7 +243,7 @@ func BenchmarkGoache_GetWithTTL(b *testing.B) {
 	})
 }
 
-func BenchmarkGoache_Delete(b *testing.B) {
+func benchShardedDelete(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.New[string, int]()
 		keys := benchKeys(n)
@@ -206,7 +261,7 @@ func BenchmarkGoache_Delete(b *testing.B) {
 	})
 }
 
-func BenchmarkGoache_Bounded(b *testing.B) {
+func benchShardedBounded(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.New[string, int](goache.WithMaxSize(n / 2))
 		keys := benchKeys(n)
@@ -218,6 +273,88 @@ func BenchmarkGoache_Bounded(b *testing.B) {
 		}
 	})
 }
+
+// BenchmarkGoache_* — the headline row. Each selects the implementation a
+// caller on this machine should be using, so these are the numbers that belong
+// in a cross-library comparison.
+
+func BenchmarkGoache_Set(b *testing.B) {
+	if singleCore() {
+		benchSingleCoreSet(b)
+		return
+	}
+	benchShardedSet(b)
+}
+
+func BenchmarkGoache_Get(b *testing.B) {
+	if singleCore() {
+		benchSingleCoreGet(b)
+		return
+	}
+	benchShardedGet(b)
+}
+
+func BenchmarkGoache_ParallelGet(b *testing.B) {
+	if singleCore() {
+		benchSingleCoreParallelGet(b)
+		return
+	}
+	benchShardedParallelGet(b)
+}
+
+func BenchmarkGoache_SetWithTTL(b *testing.B) {
+	if singleCore() {
+		benchSingleCoreSetWithTTL(b)
+		return
+	}
+	benchShardedSetWithTTL(b)
+}
+
+func BenchmarkGoache_GetWithTTL(b *testing.B) {
+	if singleCore() {
+		benchSingleCoreGetWithTTL(b)
+		return
+	}
+	benchShardedGetWithTTL(b)
+}
+
+func BenchmarkGoache_Delete(b *testing.B) {
+	if singleCore() {
+		benchSingleCoreDelete(b)
+		return
+	}
+	benchShardedDelete(b)
+}
+
+// BenchmarkGoache_Bounded is the one selection that is not simply "the faster
+// one at this core count". Below roughly 10k entries the sharded Cache evicts
+// faster even at GOMAXPROCS=1 — 47.77 vs 50.60 ns/op at n=1k, crossover
+// somewhere between 5k and 50k (ADR 0027). Selecting per size would encode a
+// threshold that has only been bracketed, never pinned, and would make this the
+// only benchmark here whose implementation changes mid-sweep. It follows the
+// same rule as the other seven; the exception is documented in the README and
+// reachable through BenchmarkGoacheSharded_Bounded.
+func BenchmarkGoache_Bounded(b *testing.B) {
+	if singleCore() {
+		benchSingleCoreBounded(b)
+		return
+	}
+	benchShardedBounded(b)
+}
+
+// BenchmarkGoacheSharded_* forces the sharded Cache at any core count, the
+// mirror of BenchmarkGoacheSingleCore_*. Without it the sharded numbers would
+// be unreachable at -cpu=1, which is where ADR 0027's "against New" comparison
+// and the bounded crossover above both come from.
+
+func BenchmarkGoacheSharded_Set(b *testing.B)            { benchShardedSet(b) }
+func BenchmarkGoacheSharded_Get(b *testing.B)            { benchShardedGet(b) }
+func BenchmarkGoacheSharded_ParallelGet(b *testing.B)    { benchShardedParallelGet(b) }
+func BenchmarkGoacheSharded_ParallelGetSet(b *testing.B) { benchShardedParallelGetSet(b) }
+func BenchmarkGoacheSharded_SetWithTTL(b *testing.B)     { benchShardedSetWithTTL(b) }
+func BenchmarkGoacheSharded_GetWithTTL(b *testing.B)     { benchShardedGetWithTTL(b) }
+func BenchmarkGoacheSharded_Delete(b *testing.B)         { benchShardedDelete(b) }
+func BenchmarkGoacheSharded_Bounded(b *testing.B)        { benchShardedBounded(b) }
 
 // --- patrickmn/go-cache ---
 
@@ -868,7 +1005,14 @@ func BenchmarkOtter_Bounded(b *testing.B) {
 // otter spend their engineering (timer wheels, W-TinyLFU admission), so
 // leaving those unmeasured would skip the competitors' strongest ground.
 
-func BenchmarkGoacheSingleCore_Set(b *testing.B) {
+// The workload bodies are shared with the BenchmarkGoache_* entry points
+// above, which call them when singleCore() reports one core. Sharing the body
+// rather than the cache type is deliberate: routing both entry points through
+// a goache.Cacher variable would put an interface dispatch (~2 ns/op, see
+// Cacher's doc comment) inside the measurement of every goache benchmark at
+// every core count, which is precisely the cost being measured.
+
+func benchSingleCoreSet(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.NewSingleCore[string, int]()
 		keys := benchKeys(n)
@@ -881,7 +1025,7 @@ func BenchmarkGoacheSingleCore_Set(b *testing.B) {
 	})
 }
 
-func BenchmarkGoacheSingleCore_Get(b *testing.B) {
+func benchSingleCoreGet(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.NewSingleCore[string, int]()
 		keys := benchKeys(n)
@@ -897,7 +1041,7 @@ func BenchmarkGoacheSingleCore_Get(b *testing.B) {
 	})
 }
 
-func BenchmarkGoacheSingleCore_ParallelGet(b *testing.B) {
+func benchSingleCoreParallelGet(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.NewSingleCore[string, int]()
 		keys := benchKeys(n)
@@ -916,7 +1060,7 @@ func BenchmarkGoacheSingleCore_ParallelGet(b *testing.B) {
 	})
 }
 
-func BenchmarkGoacheSingleCore_ParallelGetSet(b *testing.B) {
+func benchSingleCoreParallelGetSet(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.NewSingleCore[string, int]()
 		keys := benchKeys(n)
@@ -940,7 +1084,7 @@ func BenchmarkGoacheSingleCore_ParallelGetSet(b *testing.B) {
 	})
 }
 
-func BenchmarkGoacheSingleCore_SetWithTTL(b *testing.B) {
+func benchSingleCoreSetWithTTL(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.NewSingleCore[string, int]()
 		keys := benchKeys(n)
@@ -953,7 +1097,7 @@ func BenchmarkGoacheSingleCore_SetWithTTL(b *testing.B) {
 	})
 }
 
-func BenchmarkGoacheSingleCore_GetWithTTL(b *testing.B) {
+func benchSingleCoreGetWithTTL(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.NewSingleCore[string, int]()
 		keys := benchKeys(n)
@@ -969,7 +1113,7 @@ func BenchmarkGoacheSingleCore_GetWithTTL(b *testing.B) {
 	})
 }
 
-func BenchmarkGoacheSingleCore_Delete(b *testing.B) {
+func benchSingleCoreDelete(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.NewSingleCore[string, int]()
 		keys := benchKeys(n)
@@ -987,7 +1131,7 @@ func BenchmarkGoacheSingleCore_Delete(b *testing.B) {
 	})
 }
 
-func BenchmarkGoacheSingleCore_Bounded(b *testing.B) {
+func benchSingleCoreBounded(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.NewSingleCore[string, int](goache.WithMaxSize(n / 2))
 		keys := benchKeys(n)
@@ -1000,28 +1144,27 @@ func BenchmarkGoacheSingleCore_Bounded(b *testing.B) {
 	})
 }
 
+// The BenchmarkGoacheSingleCore_* entry points force SingleCoreCache
+// regardless of GOMAXPROCS. At -cpu=1 they duplicate BenchmarkGoache_*, which
+// selects the same implementation; above one core they are the only way to
+// measure what SingleCoreCache costs when it is the wrong choice, which is how
+// the crossover in ADR 0025 was located.
+
+func BenchmarkGoacheSingleCore_Set(b *testing.B)            { benchSingleCoreSet(b) }
+func BenchmarkGoacheSingleCore_Get(b *testing.B)            { benchSingleCoreGet(b) }
+func BenchmarkGoacheSingleCore_ParallelGet(b *testing.B)    { benchSingleCoreParallelGet(b) }
+func BenchmarkGoacheSingleCore_ParallelGetSet(b *testing.B) { benchSingleCoreParallelGetSet(b) }
+func BenchmarkGoacheSingleCore_SetWithTTL(b *testing.B)     { benchSingleCoreSetWithTTL(b) }
+func BenchmarkGoacheSingleCore_GetWithTTL(b *testing.B)     { benchSingleCoreGetWithTTL(b) }
+func BenchmarkGoacheSingleCore_Delete(b *testing.B)         { benchSingleCoreDelete(b) }
+func BenchmarkGoacheSingleCore_Bounded(b *testing.B)        { benchSingleCoreBounded(b) }
+
 func BenchmarkGoache_ParallelGetSet(b *testing.B) {
-	runSizes(b, func(b *testing.B, n int) {
-		c := goache.New[string, int]()
-		keys := benchKeys(n)
-		for i, k := range keys {
-			c.Set(k, i)
-		}
-		b.ReportAllocs()
-		b.ResetTimer()
-		b.RunParallel(func(pb *testing.PB) {
-			i := 0
-			for pb.Next() {
-				k := keys[i%n]
-				if i%10 == 0 {
-					c.Set(k, i)
-				} else {
-					c.Get(k)
-				}
-				i++
-			}
-		})
-	})
+	if singleCore() {
+		benchSingleCoreParallelGetSet(b)
+		return
+	}
+	benchShardedParallelGetSet(b)
 }
 
 func BenchmarkGoCache_ParallelGetSet(b *testing.B) {
