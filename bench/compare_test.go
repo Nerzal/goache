@@ -860,6 +860,13 @@ func BenchmarkOtter_Bounded(b *testing.B) {
 //
 // Mixed read/write is the case with no prior coverage: BenchmarkGoCache_*
 // above has no ParallelGetSet, so the three below are added together.
+//
+// SingleCoreCache covers the same seven categories every other library here
+// does — Set/Get/ParallelGet/SetWithTTL/GetWithTTL/Delete/Bounded — because
+// a "fastest single-core cache" claim measured on three of them is a claim
+// about three of them. TTL and bounded eviction are exactly where theine and
+// otter spend their engineering (timer wheels, W-TinyLFU admission), so
+// leaving those unmeasured would skip the competitors' strongest ground.
 
 func BenchmarkGoacheSingleCore_Set(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
@@ -933,6 +940,66 @@ func BenchmarkGoacheSingleCore_ParallelGetSet(b *testing.B) {
 	})
 }
 
+func BenchmarkGoacheSingleCore_SetWithTTL(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := goache.NewSingleCore[string, int]()
+		keys := benchKeys(n)
+		b.ReportAllocs()
+		i := 0
+		for b.Loop() {
+			c.SetWithTTL(keys[i%n], i, time.Hour)
+			i++
+		}
+	})
+}
+
+func BenchmarkGoacheSingleCore_GetWithTTL(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := goache.NewSingleCore[string, int]()
+		keys := benchKeys(n)
+		for i, k := range keys {
+			c.SetWithTTL(k, i, time.Hour)
+		}
+		b.ReportAllocs()
+		i := 0
+		for b.Loop() {
+			c.Get(keys[i%n])
+			i++
+		}
+	})
+}
+
+func BenchmarkGoacheSingleCore_Delete(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := goache.NewSingleCore[string, int]()
+		keys := benchKeys(n)
+		for i, k := range keys {
+			c.Set(k, i)
+		}
+		b.ReportAllocs()
+		i := 0
+		for b.Loop() {
+			k := keys[i%n]
+			c.Delete(k)
+			c.Set(k, i)
+			i++
+		}
+	})
+}
+
+func BenchmarkGoacheSingleCore_Bounded(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := goache.NewSingleCore[string, int](goache.WithMaxSize(n / 2))
+		keys := benchKeys(n)
+		b.ReportAllocs()
+		i := 0
+		for b.Loop() {
+			c.Set(keys[i%n], i)
+			i++
+		}
+	})
+}
+
 func BenchmarkGoache_ParallelGetSet(b *testing.B) {
 	runSizes(b, func(b *testing.B, n int) {
 		c := goache.New[string, int]()
@@ -974,6 +1041,108 @@ func BenchmarkGoCache_ParallelGetSet(b *testing.B) {
 					c.Set(k, i, gocache.NoExpiration)
 				} else {
 					c.Get(k)
+				}
+				i++
+			}
+		})
+	})
+}
+
+// The remaining ParallelGetSet benchmarks complete the 9-read/1-write mixed
+// workload across the whole field. Without them that axis compares goache
+// against go-cache only, which is the weakest competitor here — a mixed-load
+// claim has to survive ristretto, theine and otter too.
+
+func BenchmarkFreecache_ParallelGetSet(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := freecache.NewCache(freecacheBufSize(n))
+		keys := benchKeys(n)
+		for i, k := range keys {
+			_ = c.Set([]byte(k), encodeInt(i), 0)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				k := keys[i%n]
+				if i%10 == 0 {
+					_ = c.Set([]byte(k), encodeInt(i), 0)
+				} else {
+					_, _ = c.Get([]byte(k))
+				}
+				i++
+			}
+		})
+	})
+}
+
+func BenchmarkRistretto_ParallelGetSet(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := newRistretto(b, n)
+		keys := benchKeys(n)
+		for i, k := range keys {
+			c.Set(k, i, 1)
+		}
+		c.Wait()
+		b.ReportAllocs()
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				k := keys[i%n]
+				if i%10 == 0 {
+					c.Set(k, i, 1)
+				} else {
+					c.Get(k)
+				}
+				i++
+			}
+		})
+	})
+}
+
+func BenchmarkTheine_ParallelGetSet(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := newTheine(b, n)
+		keys := benchKeys(n)
+		for i, k := range keys {
+			c.Set(k, i, 1)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				k := keys[i%n]
+				if i%10 == 0 {
+					c.Set(k, i, 1)
+				} else {
+					c.Get(k)
+				}
+				i++
+			}
+		})
+	})
+}
+
+func BenchmarkOtter_ParallelGetSet(b *testing.B) {
+	runSizes(b, func(b *testing.B, n int) {
+		c := newOtter(b, n)
+		keys := benchKeys(n)
+		for i, k := range keys {
+			c.Set(k, i)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		b.RunParallel(func(pb *testing.PB) {
+			i := 0
+			for pb.Next() {
+				k := keys[i%n]
+				if i%10 == 0 {
+					c.Set(k, i)
+				} else {
+					c.GetIfPresent(k)
 				}
 				i++
 			}
