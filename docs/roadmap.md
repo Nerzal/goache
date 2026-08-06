@@ -15,7 +15,7 @@ per the repo's standing performance policy, benchmark coverage in
 
 **Status: done.** Both items below shipped — see
 [ADR 0015](adr/0015-delete-clear-api.md), `Delete`/`DeleteMany`/`Clear` in
-`cache.go`, and the "Deletion" subsection of README.md's Benchmarks section.
+`cache.go`, and the "Deletion" subsection of benchmarks/README.md.
 
 ### 1. `Delete(key)` / `DeleteMany(keys)`
 
@@ -44,7 +44,7 @@ cache is the only workaround today.
 
 **Status: item 3 done.** See [ADR 0016](adr/0016-clock-eviction.md),
 `WithMaxSize` in `cache.go`, and the "Automatic eviction" subsection of
-README.md's Benchmarks section. Item 4 (stats) is still open.
+benchmarks/README.md. Item 4 (stats) is still open.
 
 ### 3. An eviction policy (the single biggest gap vs. every competitor)
 

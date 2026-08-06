@@ -38,6 +38,7 @@ not re-attempted blind.
 | [0028](0028-runnable-examples-as-api-tests.md) | Runnable `Example*` with `// Output:` as the documented-API test; `examples/` directory of `main` packages rejected | Accepted |
 | [0029](0029-benchmark-selects-implementation-by-core-count.md) | `BenchmarkGoache_*` selects `NewSingleCore` at `GOMAXPROCS=1` and `New` above it; `Cacher`-routed selection rejected (dispatch inside the measured loop) | Accepted |
 | [0030](0030-split-benchmark-record-from-readme.md) | Full benchmark record moves to `benchmarks/README.md`; root README keeps three decision-relevant comparison tables and links out | Accepted |
+| [0031](0031-go-version-floor.md) | Module Go floor set deliberately to 1.25 (was an unchosen 1.26.2) — the version where `GOMAXPROCS` follows the cgroup quota | Accepted |
 
 Adding a new decision: copy the format of an existing record, number it
 sequentially, and add a row here.

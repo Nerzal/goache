@@ -33,6 +33,8 @@ goache is built for **concurrent, write-heavy caching where every write must lan
 go get github.com/Nerzal/goache
 ```
 
+**Requires Go 1.25 or later**, and goache has no dependencies of its own. The floor is 1.25 for two reasons: `hash/maphash.Comparable` (1.24) is how keys are hashed without reflection or per-key allocation, and 1.25 is where the runtime began deriving `GOMAXPROCS` from the cgroup CPU quota — the behaviour `NewSingleCore` exists for.
+
 ## Usage
 
 ```go

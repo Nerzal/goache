@@ -476,7 +476,7 @@ func main() {
 		{label: "DeleteMany after", value: 2014, highlight: true},
 	}))
 
-	// Cross-library comparison — from benchmarks/README.md "Comparison with other Go
+	// Cross-library comparison — from benchmarks/README.md "Against other Go
 	// cache libraries" section (bench/compare_test.go), one chart per
 	// table. These are line charts rather than bars because the tables are
 	// size-parametrized (see docs/adr/0017-size-parametrized-benchmarks.md)
@@ -537,7 +537,7 @@ func main() {
 	}))
 
 	// goache's own behaviour across core counts — from benchmarks/README.md's
-	// "Performance under a CPU limit" section (`make bench-cpu`). Get is
+	// "Under a CPU limit" section (`make bench-cpu`). Get is
 	// included as the flat reference line: it is single-goroutine, so
 	// GOMAXPROCS does not move it, which is exactly what makes the
 	// one-core convergence of the Parallel* lines onto it readable.
@@ -554,7 +554,7 @@ func main() {
 			{label: "Get (single-goroutine)", values: []float64{25.02, 24.93, 25.27, 24.16, 24.24}},
 		}))
 
-	// CPU-constrained comparison — from benchmarks/README.md's "Performance under a CPU
+	// CPU-constrained comparison — from benchmarks/README.md's "Under a CPU
 	// limit" section (`make bench-compare-cpu`). x is GOMAXPROCS, which is
 	// what a Kubernetes CPU limit actually controls under Go 1.25+: a pod
 	// with `limits.cpu: 100m` runs the leftmost column. See
