@@ -1,4 +1,4 @@
-.PHONY: build test test-race bench bench-cpu bench-singlecore bench-compare bench-compare-cpu bench-compare-singlecore vet fmt fmt-check lint tidy charts ci clean
+.PHONY: build test test-race bench bench-cpu bench-singlecore bench-compare bench-compare-cpu bench-compare-singlecore bench-compare-singlecore-sizes vet fmt fmt-check lint tidy charts ci clean
 
 build:
 	go build ./...
@@ -30,10 +30,19 @@ bench-compare-cpu:
 bench-singlecore:
 	go test -bench='SingleCore|Cacher' -benchmem -run=^$$ -cpu=1 ./...
 
-# The same claim checked against the library it has to beat at one core:
-# goache single-core vs sharded goache vs go-cache, 100k working set.
+# The same claim checked against the whole competitor field at one core, at a
+# 100k working set: every library, every category it has an equivalent for.
+# Deliberately not filtered down to goache vs go-cache — "fastest single-core
+# cache" is a claim about the field, and ristretto/theine/otter are the ones
+# that could refute it. See docs/adr/0027.
 bench-compare-singlecore:
-	cd bench && go test -bench='(GoacheSingleCore|Goache|GoCache)_(Get|Set|ParallelGet|ParallelGetSet)/n=100000$$' -benchmem -run=^$$ -cpu=1 ./...
+	cd bench && go test -bench='.*/n=100000$$' -benchmem -run=^$$ -cpu=1 ./...
+
+# The same field swept across every working-set size, to catch a competitor
+# that only wins at one end of the curve (freecache keeps entries off the Go
+# heap, which is a bet that pays at large n or not at all).
+bench-compare-singlecore-sizes:
+	cd bench && go test -bench=. -benchmem -run=^$$ -cpu=1 ./...
 
 bench-compare:
 	cd bench && go test -bench=. -benchmem -run=^$$ ./...
