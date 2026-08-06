@@ -9,10 +9,11 @@ import "time"
 //
 // Using it is opt-in and not free. Calls through an interface are indirect
 // and cannot be inlined, which measured roughly 2 ns per operation on this
-// package's benchmarks: about +8% on a single-core Get (24.4 to 26.3 ns/op)
-// and +2-5% on Cache's concurrent Get at 24 cores (4.52 to 4.71 ns/op). That
-// is exactly why New and NewSingleCore return their concrete types instead of
-// this interface — nobody pays the dispatch unless they ask for it.
+// package's benchmarks: +8.8% on a single-core Get (23.40 to 25.46 ns/op,
+// -count=10 benchstat medians) and +2-5% on Cache's concurrent Get at 24
+// cores (4.52 to 4.71 ns/op). That is exactly why New and NewSingleCore
+// return their concrete types instead of this interface — nobody pays the
+// dispatch unless they ask for it.
 //
 // If the choice can be made at compile time, or if the two branches can each
 // keep their own concrete variable, prefer that and skip this entirely.

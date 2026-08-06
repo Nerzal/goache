@@ -35,6 +35,7 @@ not re-attempted blind.
 | [0025](0025-cpu-constrained-benchmarks.md) | Benchmark under a CPU limit (GOMAXPROCS 1-24), not just on 24 cores | Accepted |
 | [0026](0026-single-core-cache.md) | A second, unsharded implementation (`NewSingleCore`) for single-core deployments; interface-returning `New` and a `shardFor` branch rejected on measurement | Accepted |
 | [0027](0027-single-core-field-claim.md) | Complete the single-core comparison matrix (8 categories × 7 libraries); read/delete budgets decomposed, no implementation change; `-count=10` + benchstat adopted | Accepted |
+| [0028](0028-runnable-examples-as-api-tests.md) | Runnable `Example*` with `// Output:` as the documented-API test; `examples/` directory of `main` packages rejected | Accepted |
 
 Adding a new decision: copy the format of an existing record, number it
 sequentially, and add a row here.
