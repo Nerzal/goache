@@ -76,8 +76,9 @@ tidy:
 	go mod tidy
 	cd bench && go mod tidy
 
-# Regenerates the benchmark bar charts embedded in README.md from the
-# numbers documented there. See docs/benchcharts/.
+# Regenerates the benchmark charts embedded in benchmarks/README.md (and the
+# three README.md also uses) from the numbers documented there.
+# See docs/benchcharts/.
 charts:
 	go run ./docs/benchcharts
 
