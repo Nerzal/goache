@@ -232,4 +232,4 @@ those items' outcomes.
 
 README.md's benchmark tables and `docs/benchcharts/main.go`'s `bar{}`
 entries were updated to the final combined-state numbers (items 1 and 4
-together); see README.md's "Benchmarks" section for the current numbers.
+together); see benchmarks/README.md for the current numbers.
